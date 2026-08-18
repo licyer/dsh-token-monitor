@@ -57,7 +57,7 @@
 
 - **`node:sqlite`**（Node 22 内置 `DatabaseSync`）：零依赖、零原生编译；DSH 自带的 session-query-sqlite 已验证同版本可用。
 - 路径：`$DSH_HOME/storages/token-monitor/token-monitor.db`（与 DSH 其他存储同级）。按插件归属命名而非内容命名——库内除用量表外还有水位、同步日志等表，归属命名不随加表过时。
-- 无外部写者：只有本插件 Host 半写库，单连接即可；开 WAL 只为读并发宽松。
+- 无外部写者：只有本插件服务端写库，单连接即可；开 WAL 只为读并发宽松。
 
 ## 4. Schema
 
@@ -264,7 +264,7 @@ CC 导入走同一个 upsert，无需特殊处理。行数上界 = 天数 × 来
 
 ## 8. 查询与展示
 
-Host 半新增路由（与现有 `/token-monitor/overview` 并列）。**按天/按模型的汇总一律读 `usage_daily_rollups`**（毫秒级），明细表只服务于会话级下钻：
+服务端新增路由（与现有 `/token-monitor/overview` 并列）。**按天/按模型的汇总一律读 `usage_daily_rollups`**（毫秒级），明细表只服务于会话级下钻：
 
 - `GET /token-monitor/usage/daily?days=30` → 读 rollup：`[{ day, model, requests, input_tokens, output_tokens, cache_read_tokens, cost_usd, unpriced_requests, ttft_avg_ms }]`（`cost_usd` 为 Host 由 `cost_usd_nano` ÷1e9 换算后的展示值）
 - `GET /token-monitor/usage/by-model?days=30` → 读 rollup 按模型汇总

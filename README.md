@@ -31,10 +31,10 @@ DeepSeek Harness（DSH）Web 界面的模型余量与用量监控插件：
 - **定价**：唯一定价源为 pi-ai 本地模型目录（随 DSH 安装，不联网），费用按
   纳美元定点整数计算，折叠时定格；目录缺失该模型时标记"未定价"，计入 token
   不计入费用。
-- **用量页签**：时间窗切换（7/30/90 天）、大数字卡组（调用次数 / Token 总消耗 /
-  估算费用 / 平均 TTFT）、按天趋势图（费用 / 请求数 / Token 三态）、按模型排行
-  （模型 / 供应商 / 客户端 / 调用 / token / 费用）、按会话明细（弹层"用量详情"
-  按钮可聚焦到具体会话）。
+- **用量页签**：时间窗切换（当天/7/30/90 天）、大数字卡组（调用次数 / Token 总消耗 /
+  估算费用 / 平均 TTFT）、按天趋势折线图（echarts 懒加载：成本 + token 四构成，
+  双 Y 轴）、按模型排行（模型 / 供应商 / 客户端 / 调用 / token / 费用）、按会话
+  明细（弹层"用量详情"按钮可聚焦到具体会话）。
 - **CC-switch 历史导入**：只读打开 `~/.cc-switch/cc-switch.db`，幂等导入
   （`INSERT OR IGNORE`），app_type 白名单 + 输入口径归一防双算。供应商按模型
   反查 pi-ai 目录推断真实供应商（`deepseek-v4-pro` → `deepseek`），并在写入时
@@ -78,9 +78,12 @@ dsh plugin --profile web add E:\VsCodeProjects\dsh-token-monitor
 ## 文件
 
 - `lib/index.js` — 服务端：webServer 路由（overview + usage/daily、by-model、
-  sessions + CC 导入 + 同步探测）、供应商抓取器、60s 缓存、折叠调度。
-- `lib/client.js` — 前端：余量徽标 + 详情弹层 + "用量"页签，手写
-  `__ModuleLoader__` 懒 CJS 格式，无构建步骤。
+  sessions + CC 导入 + 同步探测 + echarts vendor 静态分发）、供应商抓取器、
+  60s 缓存、折叠调度。
+- `lib/client.js` — 前端：余量徽标 + 详情弹层 + "用量"页签（趋势图用 echarts，
+  经 vendor 路由懒加载），手写 `__ModuleLoader__` 懒 CJS 格式，无构建步骤。
+- `vendor/echarts.min.js` — echarts 5.6.0 完整构建（Apache-2.0），由
+  `GET /token-monitor/vendor/echarts.min.js` 分发；升级时替换此文件即可。
 - `lib/util/store.js` — `node:sqlite`（`DatabaseSync`）打开/初始化用量库，明细插入 +
   rollup upsert + 水位读写 + 事务包装。
 - `lib/util/fold.js` — 会话日志折叠器：zstd 帧精确切分、增量水位、TTFT 计时、供应商名归一化。
