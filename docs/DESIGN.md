@@ -1,7 +1,30 @@
 # dsh-token-monitor 用量数据存储设计
 
-> 状态：待评审 · 2026-08-17
+> 状态：实现中 · 2026-08-20 更新
 > 范围：按会话 / 按天 / 按模型的 token 用量与估算费用的本地存储与聚合，含 CC-switch 历史数据一键导入。
+
+## 实现状态总览（2026-08-20）
+
+| 章节 | 内容 | 状态 |
+|---|---|---|
+| §2.1 | DSH 会话日志折叠 | ✅ 已实现（fold.js + fold_watermarks） |
+| §2.2 | CC-switch 数据源（读 db + 读 sql 文件） | ✅ 已实现（读 db `importCcSwitch` + 解析 sql 文件 `importCcSqlFile`） |
+| §3 | 存储选型（node:sqlite） | ✅ 已实现 |
+| §4.1 | `usage_requests` 事实表 | ✅ 已实现 |
+| §4.2 | `fold_watermarks` 水位表 | ✅ 已实现 |
+| §4.3 | `usage_daily_rollups` 预聚合表 | ✅ 已实现 |
+| §4.4 | 模型归属规则 | ✅ 已实现（折叠游标） |
+| §5 | 定价与费用口径 | ✅ 已实现（唯源 pi-ai；CC 定价不导入，2026-08-20 定稿） |
+| §6 | CC 导入（db 导入） | ✅ 已实现（`importCcSwitch` + `checkCcPending`） |
+| §6 | CC 导入（sql 文件导入） | ✅ 已实现（`importCcSqlFile` 解析 `proxy_request_logs`；用量页"导入"入口） |
+| §7 | DSH 同步节奏（5 分钟增量折叠） | ✅ 已实现 |
+| §8 | 查询路由与用量页签 | ✅ 已实现（daily/by-model/sessions/hourly/distribution/calendar/rank） |
+| §8 | 用量页签 UI（conversation.view） | ✅ 已实现 |
+| §11.1 | 数据源注册表（SyncSource 接口） | ❌ 未实现（单源写死，多源预留） |
+| §11.2 | `sync_logs` 表 | ✅ 已实现（表 + store 方法 + CC 导入接入；DSH 折叠不写，职责见 §11.2） |
+| §11.3 | 同步提示条（检测 + 按钮） | ✅ 已实现（弹层打开检测 + 同步按钮 + 结果摘要） |
+| §11.3 | CC 增量扫描（按 watermark） | ✅ 已实现（`checkCcPending`/`importCcSwitch` 增量，水位存 sync_logs） |
+| §12 | 后续扩展 | ⏸ 预留，不做 |
 
 ## 1. 目标与非目标
 
@@ -47,11 +70,21 @@
 - 辅助调用（标题生成 / compaction 摘要 / 联网搜索等非 step 的直接模型调用）日志只记请求、不记 usage，**不计入**——量级可忽略（标题上限 64 token），口径为"step 级用量"。
 - 失败/中断请求无 `assistant/message`，不计入——与 DSH 自带 `tokenUsage` 投影口径一致，界面数字不打架。
 
-### 2.2 CC-switch 历史库（导入源，一次性 + 可重入）
+### 2.2 CC-switch（外部平台用量来源，文件导入 + 可重入）
 
-- 位置：`~/.cc-switch/cc-switch.db`，**只读**打开（WAL 模式下只读连接不影响其运行）。
-- 取 `proxy_request_logs` 单表（3416 行），不导入 `usage_daily_rollups`（我们自己重聚合，口径统一）。
-- `model_pricing` 不使用（定价唯一定源 pi-ai 目录，见 §5）。
+**角色定位**：本插件只读 DSH 本平台会话日志（§2.1）；DSH 之外平台众多（Claude Code / Codex / Gemini / OpenClaw / …），每个平台各有自己的会话日志格式，我们无法逐个适配解析——**直接消费 CC-switch 已汇总好的数据**，一份导入补齐全部外部平台用量。
+
+**两个导入入口，两套读取方式（不共用逻辑）**：
+
+> 状态：**两个入口均已实现**——弹层"同步"读 db（`importCcSwitch`）、用量页"导入"读 sql 文件（`importCcSqlFile` + `parseCcSqlFile`）。
+
+- **弹层底部提示条"同步"（§11.3）**：自动检测**本机** CC 库（`~/.cc-switch/cc-switch.db`）有无未同步记录，有则提示，点同步**读 db 文件**导入本机 CC 使用记录——默认行为，无需用户干预。
+- **用量页底部数据来源卡片"导入"按钮**：**跨设备**使用记录，**由用户自己手动导入**——CC 导出功能生成的 SQL 文件（`cc-switch-export-*.sql`），用户选文件后**解析 SQL 文本**导入。
+
+**读 db 方式**：`~/.cc-switch/cc-switch.db` **只读**打开（WAL 模式下只读连接不影响其运行），SQL 查询 `proxy_request_logs` 表。
+**读 sql 文件方式**：CC 导出功能生成 `cc-switch-export-*.sql`（`sqlite3 .dump` 文本格式，含 `CREATE TABLE` + `INSERT INTO` 语句），解析 `INSERT INTO "proxy_request_logs"` 语句（仅此一张表），不依赖 SQLite 库文件存在。
+- **`proxy_request_logs` 字段语义澄清**（2026-08-20 评审修正）：`app_type` 是**客户端应用**（claude/codex/gemini/…），`provider_id='_session'` + `data_source='session_log'` 表示"该条记录来自该平台的会话日志"——即 CC 与我们的折叠是同一件事，只是 CC 汇聚了多个平台。**当前 CC 版本尚不支持 DSH 记录统计**（不产生 `app_type='dsh'` 的行），导入行都是外部平台的用量。
+- 取 `proxy_request_logs` 单表；不导入 `usage_daily_rollups`（我们自己重聚合，口径统一）。`model_pricing` 也不导入（2026-08-20 定稿：定价唯源 pi-ai，见 §5）。
 
 ## 3. 存储选型与位置
 
@@ -221,16 +254,22 @@ CC 导入走同一个 upsert，无需特殊处理。行数上界 = 天数 × 来
 
 ## 5. 定价与费用口径
 
-- **唯一定价源**：pi-ai 本地模型目录（`@earendil-works/pi-ai` 包内 `dist/providers/data/*.json`），随 DSH 安装，读取不联网。
+- **唯一定价源（主）**：pi-ai 本地模型目录（`@earendil-works/pi-ai` 包内 `dist/providers/data/*.json`），随 DSH 安装，读取不联网。
 - **计算时点**：折叠（或导入）时定格，写入 `cost_usd_nano`。全程整数运算：刊例价（$/百万 token，可有 4 位小数如 0.0028）量化为 P4 整数（price × 1e4），`cost_nano = round(tokens × P4 / 10)`——单请求取整误差 ≤ 0.5 纳美元，聚合为精确整数加法。
 - **定价缺失**：目录查不到该 model → `cost_usd_nano = NULL`，统计时该行不计入费用但计入 token；界面显示"未定价"。
-- **CC 导入行**：搬它的 `total_cost_usd`（TEXT 十进制 → 定点解析 ×1e9 取整，9 位小数内精确），不用 pi-ai 重算（其价格为当时口径，且重算会丢失它实付的 multiplier 等因素）。
+- **CC 导入行**：搬它的 `total_cost_usd`（TEXT 十进制 → 定点解析 ×1e9 取整，9 位小数内精确），**不用任何定价目录重算**（其价格为当时口径，且重算会丢失它实付的 multiplier 等因素）。
 - **展示换算**：API 返回前由 Host 统一 ÷1e9 转成美元数值/字符串；界面永远不见纳美元。
 - 单位统一 USD；界面如需 ¥ 展示，乘以固定汇率展示层处理（本期不做）。
 
 ## 6. CC-switch 导入计划
 
-字段映射：
+> 状态：**db 文件导入已实现**（`importCcSwitch` + `checkCcPending`）；**SQL 文件导入已实现**（`importCcSqlFile` + `parseCcSqlFile`，只解析 `proxy_request_logs` 一张表）；**定价表不导入**（2026-08-20 定稿：定价唯源 pi-ai，见 §5）。
+
+导入对象：**请求记录**（`proxy_request_logs`），来源可为 CC 库文件（`~/.cc-switch/cc-switch.db`）或 CC 导出的 SQL 文件（`cc-switch-export-*.sql`）。
+
+**SQL 文件解析器**（`parseCcSqlFile`）：逐行扫描，两步判断（先认 `INSERT INTO` 大小写不敏感 → 再提取表名只留 `proxy_request_logs`，可带引号/无引号/表名大小写），引号感知逗号切分 VALUES，跨行 INSERT 收集兜底。实测真实导出 3180 行全提取 + 5 种书写变体全通过。
+
+**请求记录字段映射**（CC `proxy_request_logs` → `usage_requests`）：
 
 | CC `proxy_request_logs` | `usage_requests` | 转换 |
 |---|---|---|
@@ -248,10 +287,13 @@ CC 导入走同一个 upsert，无需特殊处理。行数上界 = 天数 × 来
 
 执行规则：
 
+- **两套导入逻辑，不共用**：
+  - **弹层"同步"（§11.3）**：读 **db 文件**——SQLite 只读打开 `~/.cc-switch/cc-switch.db`，直接查询 `proxy_request_logs` 表。本机记录，默认自动检测。
+  - **用量页"导入"**：解析 **SQL 文件**——CC 导出功能生成的 `cc-switch-export-*.sql`（`sqlite3 .dump` 文本格式，含 `CREATE TABLE` + `INSERT INTO` 语句）。逐条解析 `INSERT INTO "proxy_request_logs"`，不依赖 SQLite 库文件存在。跨设备记录，用户手动选文件。
+- 两种来源的字段映射与口径归一规则完全一致（上文两张映射表），只是读取方式不同：db 走 SQL 查询、sql 文件走语句解析。
 - `INSERT OR IGNORE`：主键去重，重复导入/点多次无副作用。
 - 导入的明细行同样按 §4.3 的 upsert 规则进 `usage_daily_rollups`（以 INSERT 的 `changes() > 0` 为条件），导入完成汇总立即可查。
-- 入口：详情弹层"全部模型监控"区加"导入 CC-switch 历史"按钮 → Host 执行 → 返回导入行数/跳过行数。
-- 失败处理：文件不存在 → 提示未安装 CC-switch；schema 版本不符（缺列）→ 报具体缺失列，不部分导入。
+- 失败处理：db 文件不存在 → 提示未安装 CC-switch；sql 文件不存在/格式不符 → 提示文件无效；schema 版本不符（缺列）→ 报具体缺失列，不部分导入。
 - **输入口径归一**：CC 的 `input_tokens` 是否含缓存由 `input_token_semantics` 列标记（CC 踩过的坑）；导入时按该列换算为"未缓存输入"，与 DSH 侧 `uncachedInputTokens` 同口径，保证"新增输入"指标两源可比。
 
 ## 7. 同步节奏（DSH 日志折叠）
@@ -269,7 +311,12 @@ CC 导入走同一个 upsert，无需特殊处理。行数上界 = 天数 × 来
 - `GET /token-monitor/usage/daily?days=30` → 读 rollup：`[{ day, model, requests, input_tokens, output_tokens, cache_read_tokens, cost_usd, unpriced_requests, ttft_avg_ms }]`（`cost_usd` 为 Host 由 `cost_usd_nano` ÷1e9 换算后的展示值）
 - `GET /token-monitor/usage/by-model?days=30` → 读 rollup 按模型汇总
 - `GET /token-monitor/usage/sessions?day=...` → 读明细表按会话下钻（低频，量小）
-- `POST /token-monitor/import/cc-switch` → `{ imported, skipped }`
+- `GET /token-monitor/usage/hourly` → 当天趋势（渲染就绪 buckets，含平均 TTFT）
+- `GET /token-monitor/usage/distribution` / `calendar` / `rank` → 历史全量图（服务端聚合）
+- `GET /token-monitor/usage/sources` → 数据来源路径；`POST` 同路由 `{ source }` 打开本地目录
+- `POST /token-monitor/import/cc-switch` → db 导入（`{ imported, skipped, skippedUnknownApp }`）；`DELETE` → 清空 CC 来源数据（含 sync_logs）
+- `POST /token-monitor/import/cc-switch/sql` → SQL 文件导入（body 为文件内容）
+- `GET /token-monitor/sync/pending` → 本机 CC 库未同步探测（增量）
 
 界面路线（已评审定稿）：
 
@@ -300,7 +347,9 @@ CC 导入走同一个 upsert，无需特殊处理。行数上界 = 天数 × 来
 | 刊例价更新 | 历史成本定格不重算；token 在库可随时全量重定价 |
 | 多 DSH 实例同写 token-monitor.db | 当前部署单实例；暂不处理，多实例时加文件锁 |
 
-## 11. 同步日志与按需同步（计划项，后做）
+## 11. 同步日志与按需同步
+
+> 状态说明：§11.3 检测 + 同步按钮**已实现**；§11.2 `sync_logs` 表已建（含 2026-08-20 新增两列），**写入逻辑未实现**；§11.1 注册表**未实现**（当前单源写死）。
 
 需求：新增同步日志表；每次启动检查各数据源是否有待同步数据，有则给出按钮按需同步；设计时考虑多数据源扩展。
 
@@ -325,16 +374,20 @@ interface SyncResult { imported: number; skipped: number; filesScanned: number; 
 
 ### 11.2 `sync_logs` 表
 
+> 状态：**表已建 + store 方法已实现 + CC 导入已接入（2026-08-20 定稿）**；DSH 折叠**不写** sync_logs（增量走 `fold_watermarks`，§4.2/§7；sync_logs 仅作 manual 源审计）。
+
 ```sql
 CREATE TABLE IF NOT EXISTS sync_logs (
   id          INTEGER PRIMARY KEY AUTOINCREMENT,
   source      TEXT NOT NULL,        -- SyncSource.id
-  kind        TEXT NOT NULL,        -- 'auto' | 'manual'
+  kind        TEXT NOT NULL,        -- 'db-scan'（弹层读本机 db）| 'sql-import'（用量页解析 SQL 文件）
   started_at  INTEGER NOT NULL,
   finished_at INTEGER,              -- NULL = 进行中（崩溃遗留据此识别）
   status      TEXT NOT NULL,        -- 'running' | 'ok' | 'partial' | 'failed'
   imported    INTEGER NOT NULL DEFAULT 0,
   skipped     INTEGER NOT NULL DEFAULT 0,
+  skipped_unknown_app INTEGER NOT NULL DEFAULT 0,  -- 2026-08-20 新增：定稿口径（只统计未知应用跳过）
+  watermark   INTEGER,               -- 2026-08-20 新增：本次同步扫到的最大 created_at（毫秒），增量探测游标
   files_scanned INTEGER NOT NULL DEFAULT 0,
   errors      TEXT                  -- JSON 数组
 );
@@ -342,7 +395,16 @@ CREATE TABLE IF NOT EXISTS sync_logs (
 
 界面可回答"上次什么时候同步的、同步进来多少、有没有失败"。
 
+**职责划分（2026-08-20 定稿）**：
+- **DSH 折叠（auto）**：增量走 `fold_watermarks`（字节/序号水位），**不写** sync_logs。
+- **CC db-scan（弹层"同步"）**：`importCcSwitch` 导入后写一行 sync_logs（kind='db-scan'，含 imported / skipped_unknown_app / watermark）；`checkCcPending` 以**该 kind** 最近成功同步的 watermark 为起点增量探测本机 db。
+- **CC sql-import（用量页"导入"）**：`importCcSqlFile` 解析 SQL 文件后写一行 sync_logs（kind='sql-import'，**无水位语义**——SQL 文件是全量快照，无法确认是否同机，去重靠 `record_id` 幂等；watermark 恒 null，不参与任何增量探测）。**两种 kind 的水位互不混用**：`getLastSyncWatermark(source, kind)` 按 kind 过滤，sql-import 的水位不污染 db-scan 探测。
+- **删除 CC 数据**：`deleteBySource('cc-switch')` 同时清空该源 sync_logs（审计 + 水位）——否则删除后 `checkCcPending` 会认为记录全部"未同步"（imported 集合已空）→ 弹层又提示可同步 → 重新导入，删除形同虚设（2026-08-20 修复）。
+- 三表各司其职：`fold_watermarks`=折叠游标、`sync_logs.watermark`（db-scan）=导入游标、`sync_logs` 行=审计。
+
 ### 11.3 启动检查 + 详情底部同步提示（交互定稿）
+
+> 定位：manual 源（CC-switch）的**自动检测 + 按需同步**（**本机**记录）。默认行为——弹层打开时自动探测本机 CC 库有无未同步记录，有则底部提示条给出"同步"入口；检测与同步是两件事，检测不写日志，点同步才执行导入。**跨设备记录不在弹层提示范围**——那是用量页数据来源卡片"导入"按钮的职责（用户手动导入，§2.2）。
 
 交互流程（以 CC-switch 为例，其他 manual 源同构）：
 
@@ -357,10 +419,12 @@ CREATE TABLE IF NOT EXISTS sync_logs (
 
    多个源 pending 时逐源一行；无 pending 则整条不渲染（不占日常界面）。
 3. **用户点击同步**：按钮进入"同步中…"（禁用，复用刷新按钮的 loading 态）→ Host 执行 `sync()` → 完成后提示条更新为结果摘要（"已同步 1,234 条 · 跳过 12 条"），3 秒后淡出；失败则显示失败原因与重试按钮。
-4. **落日志**：每次同步（无论按钮触发还是 auto 源常驻折叠）写 `sync_logs` 一行；启动检查发现 pending 但用户未点，不写日志（只检测不算同步）。
-5. **auto 源**（dsh-logs）维持 §7 常驻折叠，不产生提示条，仅每轮结果记 `sync_logs`（kind='auto'）。
+4. **落日志**：CC 导入（manual 源）每次同步写 `sync_logs` 一行；启动检查发现 pending 但用户未点，不写日志（只检测不算同步）。
+5. **auto 源**（dsh-logs）维持 §7 常驻折叠，增量走 `fold_watermarks`，**不写** sync_logs（§11.2 职责划分）。
 
-Host 路由：`GET /token-monitor/sync/pending`（弹层打开时拉一次 + 同步后轮询）/ `POST /token-monitor/sync { source? }` / `GET /token-monitor/sync/log?limit=20`。
+Host 路由（当前实现）：`GET /token-monitor/sync/pending`（弹层打开时拉一次 + 同步后重拉）/ `POST /token-monitor/import/cc-switch`（读本机 db 导入；返回 `{ imported, skipped, skippedUnknownApp, filesScanned, errors }`）。通用 `POST /token-monitor/sync { source? }` 路由为将来多源预留，当前未实现（§12 或单源先跑通后加）。
+
+**统计口径（2026-08-20 定稿）**：导入结果**只向用户展示两数**——`imported`（新导入）与 `skippedUnknownApp`（未知应用跳过）。已导入的重复行（主键冲突）与白名单内正常导入都不算"跳过"、不统计；`skipped` 字段保留在返回体里供内部调试，前端提示条不显示它（避免"跳过 3180 条"这类对重复数据的误导性提示）。
 
 ## 12. 后续扩展（预留，不做）
 
