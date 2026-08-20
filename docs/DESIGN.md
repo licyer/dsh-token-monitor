@@ -19,10 +19,11 @@
 | §6 | CC 导入（历史聚合迁移 `usage_daily_rollups`） | ✅ 已实现（`importCcRollups`：覆盖 upsert + `db-rollup` 独立水位） |
 | §6 | CC 导入（sql 文件导入） | ✅ 已实现（`importCcSqlFile` 解析 `proxy_request_logs`；用量页"导入"入口） |
 | §7 | DSH 同步节奏（5 分钟增量折叠） | ✅ 已实现 |
+| §7 | 明细定期清理（60 天保留 + 24h 时间闸 + prune 审计） | ✅ 已实现（挂载折叠入口，只清明细不碰 rollup） |
 | §8 | 查询路由与用量页签 | ✅ 已实现（daily/by-model/sessions/hourly/distribution/calendar/rank） |
 | §8 | 用量页签 UI（conversation.view） | ✅ 已实现 |
 | §11.1 | 数据源注册表（SyncSource 接口） | ❌ 未实现（单源写死，多源预留） |
-| §11.2 | `sync_logs` 表 | ✅ 已实现（表 + store 方法 + CC 导入接入；DSH 折叠不写，职责见 §11.2） |
+| §11.2 | `sync_logs` 表 | ✅ 已实现（表 + store 方法 + CC 导入 + prune 审计接入；DSH 折叠不写，职责见 §11.2） |
 | §11.3 | 同步提示条（检测 + 按钮） | ✅ 已实现（弹层打开检测 + 同步按钮 + 结果摘要） |
 | §11.3 | CC 增量扫描（按 watermark） | ✅ 已实现（`checkCcPending`/`importCcSwitch` 增量，水位存 sync_logs） |
 | §12 | 后续扩展 | ⏸ 预留，不做 |
@@ -311,17 +312,18 @@ CC 导入走同一个 upsert（`session_id` 传 `''`）；CC 历史迁移走覆�
 - 插件启动时全量扫一次 `$DSH_HOME/sessions/**/session.jsonl.zstd`（mtime ≤ 水位的跳过）。
 - 之后每 **5 分钟**增量扫；详情弹层打开时触发一次增量扫。
 - 每次只折叠 `seq > watermark.last_seq` 的事件，完成后推进水位。单遍顺序读，内存占用 O(1)。
+- **明细清理挂载在折叠入口**（`foldOnce` 尾部，与折叠共用全部触发时机）：O(1) 内存时间闸（24h）在前，到点才查量闸（`MAX(day)` 早于 cutoff 才执行），执行 = 逐天 `DELETE FROM usage_requests WHERE day < cutoff`（60 天保留、本地午夜对齐完整天），**只清明细不碰 rollup**；时间闸持久化在 `sync_logs`（kind=`prune`），审计行复用 `imported` 列存删除行数。
 
 **防重复三道防线**：① file_mtime_ms 不变直接跳过文件；② seq 水位线，只折 `seq > last_seq`；③ 主键 `record_id` + `INSERT OR IGNORE` 幂等吸收。数据行写入、rollup upsert（§4.3）与水位推进在**同一事务**提交——崩溃不产生"数据已进、水位未进"的半截状态。实现细节：rollup upsert 以明细 INSERT 的 `changes() > 0` 为条件执行，保证病态场景（水位表丢失但明细仍在）下重折也不会双计。
 
 ## 8. 查询与展示
 
-服务端新增路由（与现有 `/token-monitor/overview` 并列）。**汇总查询一律读 `usage_daily_rollups`**（毫秒级，2026-08-20 起含 client 维度），明细表只服务于当天/会话级下钻：
+服务端新增路由（与现有 `/token-monitor/overview` 并列）。**汇总查询一律读 `usage_daily_rollups`**（毫秒级，2026-08-20 起主键含 client 与 session_id 维度），明细表只服务于当天/会话级下钻：
 
 - `GET /token-monitor/usage/daily?days=N` → **session 聚焦读 rollup 的 `session_id` 维度**（会话历史永久，不受明细清理影响）；当天（days=1）读明细（数据实时写入）；多天读 rollup（client/provider/model 筛选直接在 rollup 上做）：`[{ day, model, requests, input_tokens, output_tokens, cache_read_tokens, cost_usd, unpriced_requests, ttft_avg_ms }]`
 - `GET /token-monitor/usage/by-model?days=N` → 读 rollup 按模型汇总（含 client 维度，筛选同上）
-- `GET /token-monitor/usage/sessions?day=...` → 读明细表按会话下钻（低频，量小；rollup 无 session 维度）
-- `GET /token-monitor/usage/hourly` → 当天趋势（读明细分钟级聚合，渲染就绪 buckets，含平均 TTFT）
+- `GET /token-monitor/usage/sessions?day=...` → 读明细表按会话下钻（低频，量小；联查 `fold_watermarks` 取会话标题）
+- `GET /token-monitor/usage/hourly` → 当天趋势（读明细分钟级聚合，渲染就绪 buckets，含平均 TTFT；颗粒度 60/30/15/10/5/2 分钟自适应 ≥12 桶，**补桶不跨天**——当天图不出现昨天刻度）
 - `GET /token-monitor/usage/distribution` → 供应商×模型分布柱状图（**读 rollup 全量**，token 四桶口径）
 - `GET /token-monitor/usage/calendar` → 年度消耗热力（**读 rollup 近 365 天**）
 - `GET /token-monitor/usage/rank` → 使用排行（**读 rollup 全量**，model/provider/client 三维度，client 2026-08-20 起由 rollup 主键承载）
@@ -361,7 +363,7 @@ CC 导入走同一个 upsert（`session_id` 传 `''`）；CC 历史迁移走覆�
 
 ## 11. 同步日志与按需同步
 
-> 状态说明：§11.3 检测 + 同步按钮**已实现**；§11.2 `sync_logs` 表已建（含 2026-08-20 新增两列），**写入逻辑未实现**；§11.1 注册表**未实现**（当前单源写死）。
+> 状态说明：§11.3 检测 + 同步按钮**已实现**；§11.2 `sync_logs` 表已建（含 2026-08-20 新增两列），**写入逻辑已接入**（CC db-scan / sql-import / db-rollup + prune 审计，职责见 §11.2）；§11.1 注册表**未实现**（当前单源写死）。
 
 需求：新增同步日志表；每次启动检查各数据源是否有待同步数据，有则给出按钮按需同步；设计时考虑多数据源扩展。
 
@@ -432,7 +434,7 @@ CREATE TABLE IF NOT EXISTS sync_logs (
    多个源 pending 时逐源一行；无 pending 则整条不渲染（不占日常界面）。
 3. **用户点击同步**：按钮进入"同步中…"（禁用，复用刷新按钮的 loading 态）→ Host 执行 `sync()` → 完成后提示条更新为结果摘要（"已同步 1,234 条 · 跳过 12 条"），3 秒后淡出；失败则显示失败原因与重试按钮。
 4. **落日志**：CC 导入（manual 源）每次同步写 `sync_logs` 一行；启动检查发现 pending 但用户未点，不写日志（只检测不算同步）。
-5. **auto 源**（dsh-logs）维持 §7 常驻折叠，增量走 `fold_watermarks`，**不写** sync_logs（§11.2 职责划分）。
+5. **auto 源**（dsh-logs）维持 §7 常驻折叠，增量走 `fold_watermarks`，**不写** sync_logs（§11.2 职责划分）；但**明细清理（prune）写** `kind='prune'` 审计行（时间闸持久化 + 删除行数）。
 
 Host 路由（当前实现）：`GET /token-monitor/sync/pending`（弹层打开时拉一次 + 同步后重拉）/ `POST /token-monitor/import/cc-switch`（读本机 db 导入；返回 `{ imported, skipped, skippedUnknownApp, filesScanned, errors }`）。通用 `POST /token-monitor/sync { source? }` 路由为将来多源预留，当前未实现（§12 或单源先跑通后加）。
 
@@ -444,7 +446,7 @@ Host 路由（当前实现）：`GET /token-monitor/sync/pending`（弹层打开
 - 工具维度：调用频率、平均耗时、错误率（`tool/call` ↔ `tool/result`）
 - 会话级明细页：点某天展开到会话列表
 - 手动重定价命令（定价表更新后回刷历史）
-- 明细保留期 + 剪枝（参考 CC `rollup_and_prune`：30 天前明细归档进 rollup 后删除；本地午夜对齐 + 剪枝前成本回填。我们 rollup 实时 upsert 已完整，届时剪枝只是 `DELETE FROM usage_requests WHERE day < cutoff`）
+- ~~明细保留期 + 剪枝~~ → **已实现（2026-08-20，见 §7）**：60 天保留 + 24h 时间闸 + 逐天删除，只清明细不碰 rollup（沿用 CC 的本地午夜对齐细节，但无归档语义——rollup 实时 upsert 已完整）
 
 ## 附录 A：CC-switch 源码参考结论（2026-08-17 评审）
 

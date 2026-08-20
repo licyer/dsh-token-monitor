@@ -85,17 +85,20 @@ dsh plugin --profile web add E:\VsCodeProjects\dsh-token-monitor
 
 ## 文件
 
-- `lib/index.js` — 服务端：webServer 路由（overview + usage/daily、by-model、
-  sessions + CC 导入 + 同步探测 + echarts vendor 静态分发）、供应商抓取器、
-  60s 缓存、折叠调度。
+- `lib/index.js` — 服务端：webServer 路由（overview + usage/daily、by-model、sessions、
+  requests、hourly、distribution、calendar、rank + CC 导入/删除/SQL 导入 + 同步探测 +
+  数据来源目录代开 + echarts vendor 静态分发）、供应商抓取器、60s 缓存、
+  折叠调度 + 明细定期清理（60 天保留 + 24h 时间闸）。
 - `lib/client.js` — 前端：余量徽标 + 详情弹层 + "用量"页签（趋势图用 echarts，
-  经 vendor 路由懒加载），手写 `__ModuleLoader__` 懒 CJS 格式，无构建步骤。
+  经 vendor 路由懒加载；会话聚焦横幅 + 事件驱动跳转），手写 `__ModuleLoader__`
+  懒 CJS 格式，无构建步骤。
 - `vendor/echarts.min.js` — echarts 5.6.0 完整构建（Apache-2.0），由
   `GET /token-monitor/vendor/echarts.min.js` 分发；升级时替换此文件即可。
 - `lib/util/store.js` — `node:sqlite`（`DatabaseSync`）打开/初始化用量库，明细插入 +
-  rollup upsert + 水位读写 + 事务包装。
+  累加/覆盖两种 rollup upsert（主键含 client、session_id）+ 水位读写 + 明细清理 + 事务包装。
 - `lib/util/fold.js` — 会话日志折叠器：zstd 帧精确切分、增量水位、TTFT 计时、供应商名归一化。
-- `lib/util/import-cc.js` — CC-switch `proxy_request_logs` 幂等导入 + 未同步探测。
+- `lib/util/import-cc.js` — CC-switch 明细幂等导入（含 `usage_daily_rollups` 历史聚合
+  覆盖迁移 + 独立水位）+ 未同步探测 + 已知模型→供应商显式映射（未知走反查、标 unknown）。
 - `lib/util/pricing.js` — pi-ai 刊例价目录加载、纳美元定点费用计算、模型→供应商反查。
 - `DESIGN.md` — 存储与同步设计（schema、口径、同步节奏、演进）。
 
