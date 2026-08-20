@@ -16,6 +16,7 @@
 | §4.4 | 模型归属规则 | ✅ 已实现（折叠游标） |
 | §5 | 定价与费用口径 | ✅ 已实现（唯源 pi-ai；CC 定价不导入，2026-08-20 定稿） |
 | §6 | CC 导入（db 导入） | ✅ 已实现（`importCcSwitch` + `checkCcPending`） |
+| §6 | CC 导入（历史聚合迁移 `usage_daily_rollups`） | ✅ 已实现（`importCcRollups`：覆盖 upsert + `db-rollup` 独立水位） |
 | §6 | CC 导入（sql 文件导入） | ✅ 已实现（`importCcSqlFile` 解析 `proxy_request_logs`；用量页"导入"入口） |
 | §7 | DSH 同步节奏（5 分钟增量折叠） | ✅ 已实现 |
 | §8 | 查询路由与用量页签 | ✅ 已实现（daily/by-model/sessions/hourly/distribution/calendar/rank） |
@@ -84,7 +85,7 @@
 **读 db 方式**：`~/.cc-switch/cc-switch.db` **只读**打开（WAL 模式下只读连接不影响其运行），SQL 查询 `proxy_request_logs` 表。
 **读 sql 文件方式**：CC 导出功能生成 `cc-switch-export-*.sql`（`sqlite3 .dump` 文本格式，含 `CREATE TABLE` + `INSERT INTO` 语句），解析 `INSERT INTO "proxy_request_logs"` 语句（仅此一张表），不依赖 SQLite 库文件存在。
 - **`proxy_request_logs` 字段语义澄清**（2026-08-20 评审修正）：`app_type` 是**客户端应用**（claude/codex/gemini/…），`provider_id='_session'` + `data_source='session_log'` 表示"该条记录来自该平台的会话日志"——即 CC 与我们的折叠是同一件事，只是 CC 汇聚了多个平台。**当前 CC 版本尚不支持 DSH 记录统计**（不产生 `app_type='dsh'` 的行），导入行都是外部平台的用量。
-- 取 `proxy_request_logs` 单表；不导入 `usage_daily_rollups`（我们自己重聚合，口径统一）。`model_pricing` 也不导入（2026-08-20 定稿：定价唯源 pi-ai，见 §5）。
+- 取 `proxy_request_logs` 单表（明细，30 天内）；**2026-08-20 起同时迁移 `usage_daily_rollups`**（30 天前归档的按天聚合，以**覆盖语义** upsert 进我们的 rollup，走独立 `kind='db-rollup'` 水位增量——见 §6 补充说明）。`model_pricing` 不导入（定价唯源 pi-ai，见 §5）。
 
 ## 3. 存储选型与位置
 
@@ -134,7 +135,7 @@ CREATE INDEX IF NOT EXISTS idx_usage_model      ON usage_requests (model, day);
 | `record_id` | TEXT | **单字段主键**。DSH：`sessionId:seq`（seq 会话内单调递增，拼上会话 id 即全局唯一）；CC：它的 `request_id`（UUID / `session:{app_type}:…`）。**幂等的根基**：重复折叠主键冲突，`INSERT OR IGNORE` 跳过。已评审接受的假设：跨源 id 格式不同（`session-uuid:N` vs UUID），不撞靠格式差异而非联合主键约束 |
 | `source` | TEXT | 数据来源标识，取值 = SyncSource.id（§11.1）：`dsh-logs` = 本地日志折叠；`cc-switch` = CC 导入。来源筛选与分组键，为将来第三个来源留位 |
 | `client` | TEXT | 产出该请求的客户端应用，**统一非空**：DSH 自有行存 `'dsh'`；CC 行存其 `app_type`（claude/codex/…，CC 的 `type` 是误命名——值是应用标识不是类型，故不沿用）。**前瞻性过滤锚点**：若 CC 将来支持 DSH 会话日志，其行会与自有折叠双算——按 `source` + `client` 即可精确区分"DSH 自采"与"经 CC 转手的 DSH"（§6 另有导入白名单双保险） |
-| `provider` | TEXT | 供应商路由。DSH：`request/context` 的 provider（如 `kimi-coding`）；CC：`provider_id`（`_session` 显示为 "cc-switch"） |
+| `provider` | TEXT | 供应商路由。DSH：`request/context` 的 provider（如 `kimi-coding`）；CC：`provider_id`（`_session`/`_codex_session` 会话来源按模型反查真实供应商，反查失败标 `unknown` 待人工核对） |
 | `model` | TEXT | 模型 id（如 `k3`、`deepseek-v4-pro`）。按模型统计的分组键，也是定价查询的键 |
 | `session_id` | TEXT 可空 | 会话下钻维度。CC 的 session 概念与 DSH 不同（Claude Code 的会话 id），原样保留，只做展示不关联 |
 | `input_tokens` | INTEGER | 未缓存输入 token（供应商回报值） |
@@ -201,12 +202,14 @@ CREATE TABLE IF NOT EXISTS fold_watermarks (
 
 ### 4.3 `usage_daily_rollups` —— 按天预聚合表
 
-**粒度**：一行 = （天 × 来源 × 供应商 × 模型）的合计。仿 CC-switch 的同名表，但两点改良：①折叠**同事务增量 upsert**，非定期回灌，永远新鲜；②**未定价请求单列计数**，不会把"没定价"悄悄当 0 混进费用。
+**粒度**：一行 = （天 × 来源 × 客户端 × 会话 × 供应商 × 模型）的合计。仿 CC-switch 的同名表，但两点改良：①折叠**同事务增量 upsert**，非定期回灌，永远新鲜；②**未定价请求单列计数**，不会把"没定价"悄悄当 0 混进费用。**2026-08-20 起主键先后纳入 `client` 与 `session_id` 维度**：`client` 让按客户端排行等历史全量图直接读 rollup；`session_id` 让弹层"用量详情"聚焦查询按会话聚合——明细被 60 天清理删除后，会话历史仍由本表永久承载。CC 行无会话概念，`session_id` 恒 `''`。
 
 ```sql
 CREATE TABLE IF NOT EXISTS usage_daily_rollups (
-  day       TEXT NOT NULL,                 -- 'YYYY-MM-DD'（本地时区）
+  day       TEXT NOT NULL,
   source    TEXT NOT NULL,                 -- 'dsh-logs' | 'cc-switch'，保留来源以支持筛选/下钻
+  client    TEXT NOT NULL,                 -- 客户端应用（DSH 行 'dsh'；CC 行其 app_type）
+  session_id TEXT NOT NULL DEFAULT '',     -- DSH 会话 id（聚焦查询维度）；CC 行恒 ''（无会话概念）
   provider  TEXT NOT NULL,
   model     TEXT NOT NULL,
   requests         INTEGER NOT NULL DEFAULT 0,   -- 调用次数
@@ -218,7 +221,7 @@ CREATE TABLE IF NOT EXISTS usage_daily_rollups (
   unpriced_requests INTEGER NOT NULL DEFAULT 0,  -- cost_usd_nano 为 NULL 的行数（改良点②）
   ttft_sum_ms      INTEGER NOT NULL DEFAULT 0,   -- 配合 ttft_count 算均值
   ttft_count       INTEGER NOT NULL DEFAULT 0,
-  PRIMARY KEY (day, source, provider, model)
+  PRIMARY KEY (day, source, client, session_id, provider, model)
 );
 ```
 
@@ -226,8 +229,8 @@ CREATE TABLE IF NOT EXISTS usage_daily_rollups (
 
 | 列 | 语义 |
 |---|---|
-| `day` / `source` / `provider` / `model` | 联合主键，即聚合维度。`source` 保留进主键（CC 的 provider 命名与 DSH 不同，直接合并会串行） |
-| `requests` | 该组调用次数（对应 CC 的 `request_count`） |
+| `day` / `source` / `client` / `session_id` / `provider` / `model` | 联合主键，即聚合维度。`source` 保留进主键（CC 的 provider 命名与 DSH 不同，直接合并会串行）；`client` 2026-08-20 纳入（客户端筛选/排行不再依赖明细表）；`session_id` 同日纳入——不带 session 的查询按 (day, model) 等 GROUP BY 时自然跨会话聚合，SQL 无需变化；仅聚焦查询（`daily`/`by-model` 的 session 参数）按会话过滤 |
+| `requests` | 该组调用次数（对应 CC 的 `request_count`；CC 历史行含失败请求，口径直搬） |
 | token 四列 | 该组 token 合计，与明细表同口径 |
 | `cost_usd_nano` | 该组费用合计（纳美元定点）；只累加 `cost_usd_nano IS NOT NULL` 的明细行，整数加法精确无漂移 |
 | `unpriced_requests` | 定价缺失的行数：界面可提示"另有 N 次调用未定价"，而不是让费用显得虚假精确 |
@@ -236,15 +239,17 @@ CREATE TABLE IF NOT EXISTS usage_daily_rollups (
 维护方式（改良点①）：折叠每条 `usage_requests` 时，在**同一事务**内对 rollup 做 upsert：
 
 ```sql
-INSERT INTO usage_daily_rollups (day, source, provider, model, requests, input_tokens, ..., ttft_count)
-VALUES (:day, :source, :provider, :model, 1, :in, ..., :hasTtft)
-ON CONFLICT(day, source, provider, model) DO UPDATE SET
+INSERT INTO usage_daily_rollups (day, source, client, provider, model, requests, input_tokens, ..., ttft_count)
+VALUES (:day, :source, :client, :provider, :model, 1, :in, ..., :hasTtft)
+ON CONFLICT(day, source, client, provider, model) DO UPDATE SET
   requests = requests + 1,
   input_tokens = input_tokens + excluded.input_tokens,
   -- …其余列同理；cost_usd_nano 用 COALESCE(excluded.cost_usd_nano, 0)
 ```
 
-CC 导入走同一个 upsert，无需特殊处理。行数上界 = 天数 × 来源 × 供应商 × 模型，一年千级，查询永远毫秒。
+CC 导入走同一个 upsert（`session_id` 传 `''`）；CC 历史迁移走覆盖 upsert（同 `''`）。行数上界 = 天数 × 来源 × 客户端 × 会话 × 供应商 × 模型——DSH 会话维度由 `client='dsh'` 限定（每个活跃会话每天数行），整体仍在万级，查询毫秒。
+
+**`session_id` 维度的职责**（2026-08-20 纳入，服务弹层"用量详情"聚焦查询）：折叠 DSH 会话行（`source='dsh-logs'` 且 `session_id` 非空）时存真实会话 id；CC 行无会话概念统一 `''`（不参与会话维度、不拆散聚合）。**不参与明细清理**：明细被 60 天 prune 删除后，会话历史由此维度永久承载。不带 session 的查询按 `(day, model)` 等 GROUP BY 时自然跨会话聚合（SQL 无需变化）；仅 `daily`/`by-model` 路由带 `session` 参数时按会话过滤（会话聚焦 + 聚焦选项收窄）。
 
 修复路径：明细表是唯一事实源，rollup 损坏或口径调整时 `DELETE` + `INSERT ... SELECT ... GROUP BY` 全量重建。
 
@@ -263,7 +268,12 @@ CC 导入走同一个 upsert，无需特殊处理。行数上界 = 天数 × 来
 
 ## 6. CC-switch 导入计划
 
-> 状态：**db 文件导入已实现**（`importCcSwitch` + `checkCcPending`）；**SQL 文件导入已实现**（`importCcSqlFile` + `parseCcSqlFile`，只解析 `proxy_request_logs` 一张表）；**定价表不导入**（2026-08-20 定稿：定价唯源 pi-ai，见 §5）。
+> 状态：**db 文件导入已实现**（`importCcSwitch` + `checkCcPending`），**含 `usage_daily_rollups` 历史聚合迁移**（`importCcRollups`）；**SQL 文件导入已实现**（`importCcSqlFile` + `parseCcSqlFile`，只解析 `proxy_request_logs` 一张表）；**定价表不导入**（2026-08-20 定稿：定价唯源 pi-ai，见 §5）。
+
+**历史聚合迁移补充说明**（2026-08-20）：CC 的 `usage_daily_rollups` 存着 30 天前明细被归档删除的按天聚合（时间段与 `proxy_request_logs` 不重叠，机制保证同一请求只在一处）。`importCcRollups` 在每次 db 同步时连带处理：
+- **覆盖语义**：`INSERT ... ON CONFLICT(day, source, provider, model) DO UPDATE SET ... = excluded.xxx`——CC 聚合行是定格值，同 key 有则整体替换、无则新增；**与明细镜像的累加 upsert 严格区分**，重复同步/明细老化窗口均无双算。
+- **独立水位**：`kind='db-rollup'`（watermark = 已迁移 MAX(date) 的本地午夜毫秒），与 `db-scan`（明细 created_at 毫秒）同源不同 kind 互不污染；删源时 `deleteBySource` 一并清空 → 重导即全新全量。
+- **反查与口径**：`provider_id` 的 `_session`/`_codex_session`（CC 会话日志来源标记）按**已知映射优先**（kimi 旧系列 k2.x 显式钉死 `kimi-coding`——其同名模型可能被 pi-ai 其他接入商先收录）、未知模型再走 pi-ai 反查、仍查不到标 `unknown`（待人工核对模型归属后补映射/重导刷新）；`request_count`（CC 全量计数含失败）、`total_cost_usd`（搬值）、`input_tokens`（CC 已 fresh 归一）直搬；`avg_latency_ms`（总延迟均值 ≠ 我们的 TTFT）>0 时折算进 ttft 累加器，=0 不迁。
 
 导入对象：**请求记录**（`proxy_request_logs`），来源可为 CC 库文件（`~/.cc-switch/cc-switch.db`）或 CC 导出的 SQL 文件（`cc-switch-export-*.sql`）。
 
@@ -306,15 +316,17 @@ CC 导入走同一个 upsert，无需特殊处理。行数上界 = 天数 × 来
 
 ## 8. 查询与展示
 
-服务端新增路由（与现有 `/token-monitor/overview` 并列）。**按天/按模型的汇总一律读 `usage_daily_rollups`**（毫秒级），明细表只服务于会话级下钻：
+服务端新增路由（与现有 `/token-monitor/overview` 并列）。**汇总查询一律读 `usage_daily_rollups`**（毫秒级，2026-08-20 起含 client 维度），明细表只服务于当天/会话级下钻：
 
-- `GET /token-monitor/usage/daily?days=30` → 读 rollup：`[{ day, model, requests, input_tokens, output_tokens, cache_read_tokens, cost_usd, unpriced_requests, ttft_avg_ms }]`（`cost_usd` 为 Host 由 `cost_usd_nano` ÷1e9 换算后的展示值）
-- `GET /token-monitor/usage/by-model?days=30` → 读 rollup 按模型汇总
-- `GET /token-monitor/usage/sessions?day=...` → 读明细表按会话下钻（低频，量小）
-- `GET /token-monitor/usage/hourly` → 当天趋势（渲染就绪 buckets，含平均 TTFT）
-- `GET /token-monitor/usage/distribution` / `calendar` / `rank` → 历史全量图（服务端聚合）
+- `GET /token-monitor/usage/daily?days=N` → **session 聚焦读 rollup 的 `session_id` 维度**（会话历史永久，不受明细清理影响）；当天（days=1）读明细（数据实时写入）；多天读 rollup（client/provider/model 筛选直接在 rollup 上做）：`[{ day, model, requests, input_tokens, output_tokens, cache_read_tokens, cost_usd, unpriced_requests, ttft_avg_ms }]`
+- `GET /token-monitor/usage/by-model?days=N` → 读 rollup 按模型汇总（含 client 维度，筛选同上）
+- `GET /token-monitor/usage/sessions?day=...` → 读明细表按会话下钻（低频，量小；rollup 无 session 维度）
+- `GET /token-monitor/usage/hourly` → 当天趋势（读明细分钟级聚合，渲染就绪 buckets，含平均 TTFT）
+- `GET /token-monitor/usage/distribution` → 供应商×模型分布柱状图（**读 rollup 全量**，token 四桶口径）
+- `GET /token-monitor/usage/calendar` → 年度消耗热力（**读 rollup 近 365 天**）
+- `GET /token-monitor/usage/rank` → 使用排行（**读 rollup 全量**，model/provider/client 三维度，client 2026-08-20 起由 rollup 主键承载）
 - `GET /token-monitor/usage/sources` → 数据来源路径；`POST` 同路由 `{ source }` 打开本地目录
-- `POST /token-monitor/import/cc-switch` → db 导入（`{ imported, skipped, skippedUnknownApp }`）；`DELETE` → 清空 CC 来源数据（含 sync_logs）
+- `POST /token-monitor/import/cc-switch` → db 导入（`{ imported, skipped, skippedUnknownApp, rollupDays }`）；`DELETE` → 清空 CC 来源数据（含 sync_logs）
 - `POST /token-monitor/import/cc-switch/sql` → SQL 文件导入（body 为文件内容）
 - `GET /token-monitor/sync/pending` → 本机 CC 库未同步探测（增量）
 
