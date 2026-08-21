@@ -153,7 +153,7 @@ A: 按 pi-ai 本地刊例价估算，仅供参考、非实际账单；订阅制�
 
 ```sh
 git clone https://github.com/licyer/dsh-token-monitor.git
-dsh plugin --profile web add E:\VsCodeProjects\dsh-token-monitor   # 本地路径挂载
+dsh plugin --profile web add link:/path/to/dsh-token-monitor   # 本地路径挂载
 ```
 
 - 改前端（`lib/client.js`）：HMR 热替换，刷新即生效
