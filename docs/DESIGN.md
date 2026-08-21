@@ -14,7 +14,8 @@
 | §4.2 | `fold_watermarks` 水位表 | ✅ 已实现 |
 | §4.3 | `usage_daily_rollups` 预聚合表 | ✅ 已实现 |
 | §4.4 | 模型归属规则 | ✅ 已实现（折叠游标） |
-| §5 | 定价与费用口径 | ✅ 已实现（唯源 pi-ai；CC 定价不导入，2026-08-20 定稿） |
+| §4.5 | `provider_mappings` 提供方映射表（vendor 归并） | ✅ 已实现（`provider-mappings.js` 种子 + 启动幂等写入；distribution/rank 按 vendor 聚合） |
+| §5 | 定价与费用口径 | ✅ 已实现（唯源 pi-ai；CC 定价不导入；2026-08-21 加 USD→CNY 汇率展示换算） |
 | §6 | CC 导入（db 导入） | ✅ 已实现（`importCcSwitch` + `checkCcPending`） |
 | §6 | CC 导入（历史聚合迁移 `usage_daily_rollups`） | ✅ 已实现（`importCcRollups`：覆盖 upsert + `db-rollup` 独立水位） |
 | §6 | CC 导入（sql 文件导入） | ✅ 已实现（`importCcSqlFile` 解析 `proxy_request_logs`；用量页"导入"入口） |
@@ -258,6 +259,22 @@ CC 导入走同一个 upsert（`session_id` 传 `''`）；CC 历史迁移走覆�
 
 `assistant/message` 本身不带模型。折叠时维护"最近一个 `request/context` 的 (provider, model)"游标，后续 usage 行归到该路由；会话中途换模型时归属自动切换。
 
+### 4.5 `provider_mappings` —— 提供方映射表
+
+**粒度**：一行 = 一个提供方 ID（库内存储值）。查询层把 `provider_id` 换成提供方名称 / 供应商，聚合按 vendor 归并（如 `kimi-coding` + `moonshotai-cn` + `moonshotai` → vendor `kimi` 月之暗面）。
+
+```sql
+CREATE TABLE IF NOT EXISTS provider_mappings (
+  provider_id   TEXT PRIMARY KEY,   -- 提供方 ID（kimi-coding / moonshotai-cn / deepseek…）
+  provider_name TEXT NOT NULL,      -- 提供方名称（Kimi For Coding / 月之暗面 / DeepSeek…）
+  vendor        TEXT NOT NULL,      -- 供应商（kimi / deepseek / zhipu…）
+  sort_order    INTEGER NOT NULL DEFAULT 0
+);
+```
+
+- **种子**：`lib/util/provider-mappings.js`（`PROVIDER_MAPPING_SEED`，2026-08 按 pi-ai 目录模型归属整理），启动时幂等写入（已存在不覆盖，保留用户手动改的）；未映射的 provider 原样显示 id。
+- **查询层**：`distribution`/`rank` 按 vendor 聚合（柱状图供应商轴与排行"供应商"维度），筛选参数是 vendor id 时 `providerCond` 展开为 `provider IN (…pids)`；overview 的 label 统一为 provider_name。
+
 ## 5. 定价与费用口径
 
 - **唯一定价源（主）**：pi-ai 本地模型目录（`@earendil-works/pi-ai` 包内 `dist/providers/data/*.json`），随 DSH 安装，读取不联网。
@@ -265,7 +282,7 @@ CC 导入走同一个 upsert（`session_id` 传 `''`）；CC 历史迁移走覆�
 - **定价缺失**：目录查不到该 model → `cost_usd_nano = NULL`，统计时该行不计入费用但计入 token；界面显示"未定价"。
 - **CC 导入行**：搬它的 `total_cost_usd`（TEXT 十进制 → 定点解析 ×1e9 取整，9 位小数内精确），**不用任何定价目录重算**（其价格为当时口径，且重算会丢失它实付的 multiplier 等因素）。
 - **展示换算**：API 返回前由 Host 统一 ÷1e9 转成美元数值/字符串；界面永远不见纳美元。
-- 单位统一 USD；界面如需 ¥ 展示，乘以固定汇率展示层处理（本期不做）。
+- **汇率（2026-08-21 新增）**：中文界面费用展示 × USD→CNY 实时汇率（`open.er-api.com`，24h 时间闸 + 本地 8 点后更新，失败默认 7.2 兜底；内存缓存不入库），随 overview/sources 接口下发；英文界面直接显示美元不换算。
 
 ## 6. CC-switch 导入计划
 
@@ -274,7 +291,7 @@ CC 导入走同一个 upsert（`session_id` 传 `''`）；CC 历史迁移走覆�
 **历史聚合迁移补充说明**（2026-08-20）：CC 的 `usage_daily_rollups` 存着 30 天前明细被归档删除的按天聚合（时间段与 `proxy_request_logs` 不重叠，机制保证同一请求只在一处）。`importCcRollups` 在每次 db 同步时连带处理：
 - **覆盖语义**：`INSERT ... ON CONFLICT(day, source, provider, model) DO UPDATE SET ... = excluded.xxx`——CC 聚合行是定格值，同 key 有则整体替换、无则新增；**与明细镜像的累加 upsert 严格区分**，重复同步/明细老化窗口均无双算。
 - **独立水位**：`kind='db-rollup'`（watermark = 已迁移 MAX(date) 的本地午夜毫秒），与 `db-scan`（明细 created_at 毫秒）同源不同 kind 互不污染；删源时 `deleteBySource` 一并清空 → 重导即全新全量。
-- **反查与口径**：`provider_id` 的 `_session`/`_codex_session`（CC 会话日志来源标记）按**已知映射优先**（kimi 旧系列 k2.x 显式钉死 `kimi-coding`——其同名模型可能被 pi-ai 其他接入商先收录）、未知模型再走 pi-ai 反查、仍查不到标 `unknown`（待人工核对模型归属后补映射/重导刷新）；`request_count`（CC 全量计数含失败）、`total_cost_usd`（搬值）、`input_tokens`（CC 已 fresh 归一）直搬；`avg_latency_ms`（总延迟均值 ≠ 我们的 TTFT）>0 时折算进 ttft 累加器，=0 不迁。
+- **反查与口径**：`provider_id` 为 `_session`/`_codex_session`/`_opencode_session`（CC 会话日志来源标记）或 **UUID 形态的 provider 实例**（如 `0c1712c0-…`，本质是某供应商的配置实例）时，按**已知映射优先**（kimi 旧系列 k2.x 显式钉死 `kimi-coding`——其同名模型可能被 pi-ai 其他接入商先收录）、未知模型再走 pi-ai 反查、仍查不到标 `unknown`（待人工核对模型归属后补映射/重导刷新）——UUID 实例不能原样落库成 UUID（供应商维度会分裂脏值）；`request_count`（CC 全量计数含失败）、`total_cost_usd`（搬值）、`input_tokens`（CC 已 fresh 归一）直搬；`avg_latency_ms`（总延迟均值 ≠ 我们的 TTFT）>0 时折算进 ttft 累加器，=0 不迁。
 
 导入对象：**请求记录**（`proxy_request_logs`），来源可为 CC 库文件（`~/.cc-switch/cc-switch.db`）或 CC 导出的 SQL 文件（`cc-switch-export-*.sql`）。
 
@@ -320,23 +337,27 @@ CC 导入走同一个 upsert（`session_id` 传 `''`）；CC 历史迁移走覆�
 
 服务端新增路由（与现有 `/token-monitor/overview` 并列）。**汇总查询一律读 `usage_daily_rollups`**（毫秒级，2026-08-20 起主键含 client 与 session_id 维度），明细表只服务于当天/会话级下钻：
 
-- `GET /token-monitor/usage/daily?days=N` → **session 聚焦读 rollup 的 `session_id` 维度**（会话历史永久，不受明细清理影响）；当天（days=1）读明细（数据实时写入）；多天读 rollup（client/provider/model 筛选直接在 rollup 上做）：`[{ day, model, requests, input_tokens, output_tokens, cache_read_tokens, cost_usd, unpriced_requests, ttft_avg_ms }]`
+- `GET /token-monitor/usage/daily?days=N` → **session 聚焦读 rollup 的 `session_id` 维度**（会话历史永久，不受明细清理影响）；当天（days=1）读明细（数据实时写入）；多天读 rollup（client/provider/model 筛选直接在 rollup 上做；provider 参数为 vendor id 时展开 `IN`）：`[{ day, model, requests, input_tokens, output_tokens, cache_read_tokens, cost_usd, unpriced_requests, ttft_avg_ms }]`
 - `GET /token-monitor/usage/by-model?days=N` → 读 rollup 按模型汇总（含 client 维度，筛选同上）
 - `GET /token-monitor/usage/sessions?day=...` → 读明细表按会话下钻（低频，量小；联查 `fold_watermarks` 取会话标题）
 - `GET /token-monitor/usage/hourly` → 当天趋势（读明细分钟级聚合，渲染就绪 buckets，含平均 TTFT；颗粒度 60/30/15/10/5/2 分钟自适应 ≥12 桶，**补桶不跨天**——当天图不出现昨天刻度）
-- `GET /token-monitor/usage/distribution` → 供应商×模型分布柱状图（**读 rollup 全量**，token 四桶口径）
+- `GET /token-monitor/usage/distribution` → 供应商×模型分布柱状图（**读 rollup 全量**，token 四桶口径；**按 vendor 聚合**、渲染全部模型不 Top8 截断，附加 `modelVendor`/`vendorModels` 供前端配色与 tooltip）
 - `GET /token-monitor/usage/calendar` → 年度消耗热力（**读 rollup 近 365 天**）
-- `GET /token-monitor/usage/rank` → 使用排行（**读 rollup 全量**，model/provider/client 三维度，client 2026-08-20 起由 rollup 主键承载）
-- `GET /token-monitor/usage/sources` → 数据来源路径；`POST` 同路由 `{ source }` 打开本地目录
+- `GET /token-monitor/usage/rank` → 使用排行（**读 rollup 全量**，model/vendor/client 三维度——供应商维度按 vendor 聚合，`providers` 集合保留原始 provider id 供组合列展开）
+- `GET /token-monitor/usage/sources` → 数据来源路径（含 `usdCnyRate`/`rateFetchedAt` 汇率下发）；`POST` 同路由 `{ source }` 打开本地目录
 - `POST /token-monitor/import/cc-switch` → db 导入（`{ imported, skipped, skippedUnknownApp, rollupDays }`）；`DELETE` → 清空 CC 来源数据（含 sync_logs）
 - `POST /token-monitor/import/cc-switch/sql` → SQL 文件导入（body 为文件内容）
 - `GET /token-monitor/sync/pending` → 本机 CC 库未同步探测（增量）
+
+**供应商抓取器**（`GET /token-monitor/overview`）：`kimi-coding`（订阅额度 5h/7d + 权益等级）、`deepseek`（账户余额）、`opencode-go`（OpenCode 订阅额度，`OPENCODE_GO_API_KEY`，rolling/weekly/monthly 三窗口 5h/7d/30d，2026-08-21 新增）——抓取器注册表 `FETCHERS` 键与 DSH 路由名对齐，徽标可直接定位；overview 下发 label 统一为 `provider_mappings` 的提供方名。
 
 界面路线（已评审定稿）：
 
 - **弹层（保持轻量，不再加料）**：供应商额度卡 + 本会话用量卡（会话下拉）。**跨会话的用量统计不进弹层**——弹层信息量已饱和。
 - **终态（方案 4，用量统计的唯一归宿）**：注册 `conversation.view` 槽位，在主区与"对话 / 轨迹"并列加"**用量**"页签，整区做数据面板——时间窗切换、大数字卡组、按天趋势图、按模型排行、按会话明细表、费用专题。
 - **入口**：详情弹层会话下拉的**名称右侧加"↗ 详情"入口**，点击打开主区"用量"页签（通过运行时的视图切换机制激活对应 view）。
+- **语言跟随（2026-08-21）**：前端文案走 `t(key, vars)` 字典（zh/en，命名空间 token-monitor），随 DSH `locale` 切换；服务端返回的中文文案经 `SERVER_EN_RULES` 规则表在英文界面转译，未命中保留原文。
+- **静态资源**：echarts 随插件分发（`lib/util/echarts.min.js`），经 `GET /token-monitor/echarts.min.js` 路由分发（2026-08-21 由 `vendor/` 移入 `lib/util/`，路由路径相应变更）。
 
 弹层与主区页签读同一组 Host 路由，无数据口径分叉。
 
