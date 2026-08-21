@@ -1,9 +1,10 @@
-# dsh-token-monitor
-
-DeepSeek Harness（DSH）Web 界面的**模型余量与用量监控**插件：会话头部实时余量徽标 + 主区"用量"页签，本地 SQLite 记录每次调用的 token 与费用。
-
 <div align="center">
 
+# Token用量监控
+
+DeepSeek Harness（DSH）Web 界面的大模型**余量与用量监控**插件：会话头部实时余量徽标 + 主区"用量"页签，本地 SQLite 记录每次调用的 token 与费用。
+
+[![release](https://img.shields.io/github/v/release/licyer/dsh-token-monitor.svg)](https://github.com/licyer/dsh-token-monitor/releases)
 [![npm version](https://img.shields.io/npm/v/dsh-token-monitor.svg)](https://www.npmjs.com/package/dsh-token-monitor)
 [![license](https://img.shields.io/npm/l/dsh-token-monitor.svg)](LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D22-339933)](https://nodejs.org)
