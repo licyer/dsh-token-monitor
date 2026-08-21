@@ -1,0 +1,7 @@
+# dsh-token-monitor 的 profile bundle patch 层。
+# 声明在 package.json 的 dsh.bundle.patch：随依赖安装自动成为 profile layer，
+# 把本插件插入 web profile 的 cordis 根（等价于手动在 profile 的 cordis.patch.yml 追加
+# insert 块，但无需用户操作——`dsh plugin add` 后由 dsh 的 bundles 机制自动加载）。
+- insert:
+    - id: token-monitor
+      name: dsh-token-monitor
