@@ -45,7 +45,6 @@
   },
   "files": [
     "lib",
-    "vendor/echarts.min.js",
     "README.md",
     "LICENSE"
   ]
