@@ -1,111 +1,164 @@
 # dsh-token-monitor
 
-DeepSeek Harness（DSH）Web 界面的模型余量与用量监控插件：
+DeepSeek Harness（DSH）Web 界面的**模型余量与用量监控**插件：会话头部实时余量徽标 + 主区"用量"页签，本地 SQLite 记录每次调用的 token 与费用。
 
-1. **余量徽标**：会话头部右侧（`conversation.session.header.utilities` 槽位）显示当前会话
-   所用模型对应供应商的余量徽标，点击弹出详情层。
-2. **用量页签**：主区与"对话 / 轨迹"并列的"用量"页签（`conversation.view` 槽位），
-   展示按天/按模型/按会话的 token 用量与估算费用面板。
+<div align="center">
+
+[![npm version](https://img.shields.io/npm/v/dsh-token-monitor.svg)](https://www.npmjs.com/package/dsh-token-monitor)
+[![license](https://img.shields.io/npm/l/dsh-token-monitor.svg)](LICENSE)
+[![node](https://img.shields.io/badge/node-%3E%3D22-339933)](https://nodejs.org)
+
+[功能](#功能) · [安装](#安装) · [供应商适配](#供应商适配) · [常见问题](#常见问题) · [架构](#架构) · [开发](#开发)
+
+</div>
+
+> [!NOTE]
+> 需要 **Node.js ≥ 22**（依赖内置 `node:sqlite`）。仅支持 DSH Web 端（`platform: web`）。
+
+<p align="center">
+  <!-- TODO: hero 总览截图（用量页签整页） -->
+  <img src="docs/images/usage-overview.png" alt="用量页签总览" width="100%">
+</p>
 
 ## 功能
 
-### 余量监控（详情弹层）
-
-- **当前模型余量**：徽标 = 当前模型 + 该供应商关键指标（如 `k3 · 5h 剩 82%`、
-  `deepseek-v4 · 12.34 CNY`）。当前模型通过 `session.models` RPC 实时读取。
-  余量规则：7 天额度耗尽时显示 `7d 剩 0%`（告急优先），否则显示 5 小时余量；
-  5 小时窗口缺失时降级显示 7 天余量。
-- **本会话用量**：读 `tokenUsage` / `contextPressure` 投影（输入/输出/缓存读写
-  token、上下文占用条），弹层内可切换会话下钻。
-- **全部模型监控**：弹层内折叠区列出服务端聚合的所有供应商状态（Kimi 显示
-  `5h · 7d` 余量、DeepSeek 显示余额）。
-- **同步提示条**：检测到 cc-switch 有未同步数据时，弹层底部出现"检测到
-  cc-switch 有 N 条请求记录可同步 [同步]"提示条，一键同步，成功后倒计时自动关闭。
-
-### 用量统计（本地 SQLite）
-
-- **自动折叠**：增量解析 `$DSH_HOME/sessions/**/session.jsonl.zstd`（多帧 zstd
-  JSONL），把每次模型调用的 token 四项 + 估算费用写入 `usage_requests` 事实表，
-  同事务维护 `usage_daily_rollups` 预聚合与 `fold_watermarks` 水位。启动即扫、
-  之后每 5 分钟增量扫，查询路由前也会先增量折叠。
-- **明细保留**：`usage_requests` 明细按天保留 60 天（本地午夜对齐完整天），
-  清理检查挂载在折叠入口（内存时间闸，24h 内零开销），到点自动删除过期明细；
-  只删明细不碰 rollup——历史按天统计由预聚合表继续承载。清理记录写入
-  `sync_logs`（kind=`prune`），进程重启后从该表恢复时间闸。
-- **定价**：唯一定价源为 pi-ai 本地模型目录（随 DSH 安装，不联网），费用按
-  纳美元定点整数计算，折叠时定格；目录缺失该模型时标记"未定价"，计入 token
-  不计入费用。
-- **用量页签**：时间窗切换（当天/7/30/90 天/**全部**）、大数字卡组（调用次数 / Token 总消耗 /
-  估算费用 / 平均 TTFT）、按天趋势折线图（echarts 懒加载：成本 + token 四构成，
-  双 Y 轴）、按模型排行（模型 / 供应商 / 客户端 / 调用 / token / 费用）、按会话
-  明细（弹层"用量详情"→ 聚焦该会话：客户端=dsh、时间窗=全部、横幅可取消聚焦）。
-- **CC-switch 历史导入**：只读打开 `~/.cc-switch/cc-switch.db`，幂等导入
-  （`INSERT OR IGNORE`），app_type 白名单 + 输入口径归一防双算。供应商按模型
-  反查 pi-ai 目录推断真实供应商（`deepseek-v4-pro` → `deepseek`），并在写入时
-  归一化 DSH 路由名（`deepseek-official` → `deepseek`），两源口径统一。
-  **历史聚合一并迁移**：CC 的 `usage_daily_rollups`（30 天前归档的按天聚合）
-  以覆盖语义（有则替换、无则新增）同步进本库 rollup，走独立水位
-  `kind='db-rollup'` 增量——6 月起的归档历史（如 9.6 亿 token）一次补齐，
-  重复同步/明细老化均不会双算。
-
-## 数据源（服务端）
-
-| 供应商 | 类型 | 端点 |
-|---|---|---|
-| Kimi For Coding | 订阅额度 | `GET /coding/v1/usages`（7天用量 + 频限明细滚动窗口）+ `GET /coding/v1/me`（权益等级名）——2026-08 实测校准，展示口径对齐官方控制台 |
-| DeepSeek | 账户余额 | `GET /user/balance`（官方接口） |
-
-凭证按 `apiKeyEnv` 引用解析：先走 DSH 的 credentials seam
-（`~/.dsh/.credentials.yaml`），再退回进程环境变量。Key 不离开服务端。
+| 能力 | 说明 |
+| --- | --- |
+| 余量徽标 | 会话头部显示当前模型供应商余量（`k3 · 5h 剩 82%`），点击弹详情层 |
+| 用量页签 | 与"对话 / 轨迹"并列：token 用量、估算费用、趋势、排行、请求明细 |
+| 自动采集 | 字节级增量采集 DSH 会话日志（zstd 分帧），后台定时 + 手动触发 |
+| 历史导入 | 可导入 cc-switch 历史记录，重复导入不产生重复数据 |
+| 语言跟随 | 界面文案跟随 DSH 中文 / 英文切换 |
 
 ## 安装
 
+### 从 npm（推荐）
+
 ```sh
-# 在 web profile 里安装本包（pnpm link）
-dsh plugin --profile web add E:\VsCodeProjects\dsh-token-monitor
+dsh plugin --profile web add dsh-token-monitor
 ```
 
-然后在 `~/.dsh/profiles/web/cordis.patch.yml` 的顶层数组里追加一行：
+### 从 GitHub
+
+```sh
+dsh plugin --profile web add github:licyer/dsh-token-monitor
+```
+
+然后在 `~/.dsh/profiles/web/cordis.patch.yml` 顶层数组追加：
 
 ```yaml
 - insert:
     - id: token-monitor
       name: dsh-token-monitor
-      # config:
-      #   cacheMs: 60000
-      #   providers:
-      #     kimi-coding:
-      #       url: https://api.kimi.com/coding/v1/usages   # 端点漂移时钉死/改指
-      #   ccSwitchDb: ~/.cc-switch/cc-switch.db             # CC 导入库位置
 ```
 
-重启 `dsh web` 后生效。改**前端**（`lib/client.js`）会被 dsh-client-hmr 轮询
-发现并热替换，刷新页面即生效；改**服务端**（`lib/index.js` 及其引用的模块）
-需要重启进程。
+重启 `dsh web` 生效。
 
-## 文件
+## 余量监控
 
-- `lib/index.js` — 服务端：webServer 路由（overview + usage/daily、by-model、sessions、
-  requests、hourly、distribution、calendar、rank + CC 导入/删除/SQL 导入 + 同步探测 +
-  数据来源目录代开 + echarts vendor 静态分发）、供应商抓取器、60s 缓存、
-  折叠调度 + 明细定期清理（60 天保留 + 24h 时间闸）。
-- `lib/client.js` — 前端：余量徽标 + 详情弹层 + "用量"页签（趋势图用 echarts，
-  经 vendor 路由懒加载；会话聚焦横幅 + 事件驱动跳转），手写 `__ModuleLoader__`
-  懒 CJS 格式，无构建步骤。
-- `vendor/echarts.min.js` — echarts 5.6.0 完整构建（Apache-2.0），由
-  `GET /token-monitor/vendor/echarts.min.js` 分发；升级时替换此文件即可。
-- `lib/util/store.js` — `node:sqlite`（`DatabaseSync`）打开/初始化用量库，明细插入 +
-  累加/覆盖两种 rollup upsert（主键含 client、session_id）+ 水位读写 + 明细清理 + 事务包装。
-- `lib/util/fold.js` — 会话日志折叠器：zstd 帧精确切分、增量水位、TTFT 计时、供应商名归一化。
-- `lib/util/import-cc.js` — CC-switch 明细幂等导入（含 `usage_daily_rollups` 历史聚合
-  覆盖迁移 + 独立水位）+ 未同步探测 + 已知模型→供应商显式映射（未知走反查、标 unknown）。
-- `lib/util/pricing.js` — pi-ai 刊例价目录加载、纳美元定点费用计算、模型→供应商反查。
-- `DESIGN.md` — 存储与同步设计（schema、口径、同步节奏、演进）。
+徽标显示当前模型供应商的余量：**订阅制**供应商（如 Kimi For Coding）显示滚动窗口与周额度百分比；**按量付费**供应商（如 DeepSeek 官方）显示账户余额。
 
-## 设计要点（详见 DESIGN.md）
+点击徽标弹出详情层：当前供应商指标、本会话 token 用量（可切换会话）、全部供应商折叠区、cc-switch 数据同步提示条、更新时间与刷新。
 
-- 计费闸：usage 四项任一 > 0 即入库，不要求 output > 0（CC 曾因此低估 4.1%）。
-- 防重复三道防线：文件 mtime 跳过 → seq 水位 → 主键 `INSERT OR IGNORE`，
-  数据行 / rollup / 水位同事务提交。
-- 高频汇总读 `usage_daily_rollups` 预聚合表；含客户端维度时读明细表（数千行，
-  毫秒级），与明细增长解耦。
+<!-- TODO: 会话头部余量徽标（红框标注所在位置） -->
+
+<!-- TODO: 徽标点击后的详情弹层（供应商指标 + 会话用量） -->
+![余量详情弹层](docs/images/quota-popover.png)
+
+## 用量页签
+
+顶部筛选（范围 / 客户端 / 供应商 / 模型级联）+ 时间窗（当天 / 7 / 30 / 90 天），统计卡显示总消耗、请求次数、预估费用、平均 TTFT、新增输入、缓存命中、输出、缓存命中率。
+
+- **使用趋势**：渐变面积图，左轴 token 构成，右轴切换预估费用 / 请求次数；当天自动切半小时刻度（<15 桶时）
+
+<!-- TODO: 使用趋势图（含顶部统计卡与筛选行） -->
+![使用趋势](docs/images/usage-trend.png)
+
+- **供应商消耗统计**：X 轴供应商、柱内按模型堆叠，右柱费用 / 次数可切换
+
+<!-- TODO: 供应商消耗统计柱状图（堆叠双柱 + 右轴切换按钮） -->
+![供应商消耗统计](docs/images/provider-bars.png)
+
+- **年度消耗热力图**：GitHub 日历风，近 12 个整月，色深 = 当日 token，首尾按周补齐
+
+<!-- TODO: 年度消耗热力图（日历格 + 图例） -->
+![年度消耗热力图](docs/images/heatmap.png)
+
+- **使用排行**：模型 / 供应商 / 客户端三维度聚合，默认按总消耗降序
+
+<!-- TODO: 使用排行表格（维度切换页签可见） -->
+![使用排行](docs/images/usage-rank.png)
+
+- **请求记录**：分页明细表（时间倒序），页码跳转、每页条数可调（10/20/50/100）
+
+<!-- TODO: 请求记录表格（含底部分页器） -->
+![请求记录](docs/images/usage-records.png)
+
+- **会话聚焦**：弹层"用量详情"→ 聚焦该会话，横幅可取消
+
+## 供应商适配
+
+| 供应商 | 提供方 | 适配说明 |
+| --- | --- | --- |
+| Kimi（Moonshot AI） | Kimi For Coding | 订阅制额度：5h / 7d / 权益等级（百分比与重置倒计时） |
+| DeepSeek | DeepSeek 官方 | 按量付费：账户余额 |
+| OpenCode | OpenCode Go | 订阅制额度：5h / 7d / 30d （百分比与重置倒计时） |
+| — | 其他提供方 | 未适配 |
+
+## 常见问题
+
+<details>
+<summary><strong>徽标没显示或"查询失败"？</strong></summary>
+
+A: 确认供应商凭证已配置（credentials seam 或环境变量）且 `providers` 声明了 `apiKeyEnv`；端点漂移可手动钉死 `url`。
+
+</details>
+
+<details>
+<summary><strong>用量页签没数据？</strong></summary>
+
+A: 用量来自会话日志采集：确认 `$DSH_HOME/sessions` 下有会话日志，点顶部"刷新"（先采集再查询）；CC 数据需在"数据来源"手动导入。
+
+</details>
+
+<details>
+<summary><strong>费用准不准？</strong></summary>
+
+A: 按 pi-ai 本地刊例价估算，仅供参考、非实际账单；订阅制不产生真实扣费。未定价模型计入 token 不计入费用。
+
+</details>
+
+## 已知限制
+
+- 费用为估算（pi-ai 刊例价 + 每日汇率），非实际账单。
+- 明细保留 60 天；更早的历史只能看按天聚合。
+- 服务端窗口倒计时文案（如 `5h 后重置`）暂未多语言化。
+
+## 架构
+
+```
+用户操作          ┌─ 定时器(5min) ─┐
+  │               │  手动刷新      │
+  ▼               ▼                ▼
+页面查询 ──纯读──▶ SQLite ◀──字节级增量折叠── 会话日志(zstd)
+(秒开)           (token-monitor.db)            ($DSH_HOME/sessions)
+```
+
+- 页面打开：先从数据库渲染（秒开）→ 后台触发一轮折叠 → 静默重载
+- 查询路由**不**触发日志读取；折叠只由 定时器 / 手动刷新 / 打开后后台触发 驱动
+- 折叠水位记录字节偏移（`last_offset`），只续读追加的日志帧
+- 存储与同步设计详见 [设计文档](docs/DESIGN.md)
+
+## 开发
+
+```sh
+git clone https://github.com/licyer/dsh-token-monitor.git
+dsh plugin --profile web add E:\VsCodeProjects\dsh-token-monitor   # 本地路径挂载
+```
+
+- 改前端（`lib/client.js`）：HMR 热替换，刷新即生效
+- 改服务端（`lib/index.js` / `lib/util/`）：需重启 `dsh web` 进程
+
+## 许可证
+
+[MIT](LICENSE) © 2026 licyer
