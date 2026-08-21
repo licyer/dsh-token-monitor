@@ -1,8 +1,7 @@
 {
   "name": "dsh-token-monitor",
   "version": "0.1.0",
-  "private": true,
-  "description": "DSH Web 会话头部大模型余量监控插件：当前模型额度徽标 + 全部供应商详情弹层",
+  "description": "DSH Web 会话头部大模型余量监控插件：当前模型额度徽标 + 全部供应商详情弹层 + 用量统计页签",
   "type": "module",
   "main": "lib/index.js",
   "exports": {
@@ -10,6 +9,31 @@
     "./client": "./lib/client.js",
     "./package.json": "./package.json"
   },
+  "license": "MIT",
+  "author": "licyer",
+  "engines": {
+    "node": ">=22"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/licyer/dsh-token-monitor.git"
+  },
+  "homepage": "https://github.com/licyer/dsh-token-monitor#readme",
+  "bugs": {
+    "url": "https://github.com/licyer/dsh-token-monitor/issues"
+  },
+  "keywords": [
+    "dsh",
+    "dsh-plugin",
+    "deepseek-harness",
+    "token-monitor",
+    "usage",
+    "quota",
+    "kimi",
+    "deepseek",
+    "llm",
+    "token-usage"
+  ],
   "dsh": {
     "client": {
       "inject": [
@@ -20,8 +44,9 @@
     }
   },
   "files": [
-    "lib/index.js",
-    "lib/client.js",
-    "vendor/echarts.min.js"
+    "lib",
+    "vendor/echarts.min.js",
+    "README.md",
+    "LICENSE"
   ]
 }
