@@ -1,6 +1,6 @@
 <div align="center">
 
-# Token用量监控
+# dsh-token-monitor
 
 DeepSeek Harness（DSH）Web 界面的大模型**余量与用量监控**插件：会话头部实时余量徽标 + 主区"用量"页签，本地 SQLite 记录每次调用的 token 与费用。
 
