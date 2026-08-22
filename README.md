@@ -59,7 +59,7 @@ dsh plugin --profile web add github:licyer/dsh-token-monitor
 
 徽标显示当前模型供应商的余量：**订阅制**供应商（如 Kimi For Coding）显示滚动窗口与周额度百分比；**按量付费**供应商（如 DeepSeek 官方）显示账户余额。
 
-点击徽标弹出详情层：当前供应商指标、本会话 token 用量（可切换会话）、全部供应商折叠区、cc-switch 数据同步提示条、更新时间与刷新。
+点击徽标弹出详情层：当前提供方指标、本会话 token 用量（可切换会话）、全部提供方折叠区、cc-switch 数据同步提示条、更新时间与刷新。
 
 <!-- TODO: 会话头部余量徽标（红框标注所在位置） -->
 
@@ -96,6 +96,25 @@ dsh plugin --profile web add github:licyer/dsh-token-monitor
 ![请求记录](docs/images/usage-records.png)
 
 - **会话聚焦**：弹层"用量详情"→ 聚焦该会话，横幅可取消
+
+## 插件配置
+
+配置文件：`$DSH_HOME/storages/token-monitor/config.json`（Windows 默认 `C:\Users\<你>\.dsh\storages\token-monitor\config.json`）。
+
+设置入口：DSH 设置面板（左下角齿轮）→ **Token Monitor** 页，表单保存后即时写回该文件。三个设置项：默认时间窗 / 余量轮询间隔（秒）/ 请求记录保留时间（天）。
+
+| 字段 | 默认值 | 含义 |
+| --- | --- | --- |
+| `defaultDays` | `1` | 用量页签默认时间窗天数；`0` = 全部 |
+| `pollMs` | `60` | 头部余量轮询间隔（单位秒，`5`–`86400`）。设置页与 `config.json` 均存秒，需要毫秒时由前端单独 ×1000 |
+| `retentionDays` | `60` | 请求记录保留天数（超过此时长的记录会被定期清理，不影响聚合统计；设置页提供 30/60/90） |
+
+行为约定：
+
+- 文件**不存在**时插件自动创建一份默认值文件（纯 JSON），无需手动建；
+- 已有文件**绝不覆盖**（含格式调整后缺新字段时，缺的字段回落默认值）；
+- 文件**损坏**（非法 JSON）时用默认值运行，且**不覆盖**坏文件，仅记录警告；
+- 设置页保存（`POST /token-monitor/config`）是唯一写入路径：合并更新已知字段，用户手加的未知键原样保留；非法值回落默认；保存前校验，空对象/非法 JSON 返回 400。
 
 ## 供应商适配
 
