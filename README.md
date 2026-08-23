@@ -70,7 +70,7 @@ dsh plugin --profile web add github:licyer/dsh-token-monitor
 
 顶部筛选（客户端 / 供应商 / 模型级联，供应商按厂商归并）+ 时间窗（当天 / 7 / 30 / 90 天 / 全部），统计卡显示总消耗、请求次数、预估费用、平均 TTFT、新增输入、缓存命中、输出、缓存命中率。
 
-- **使用趋势**：渐变面积图，左轴 token 构成，右轴切换预估费用 / 请求次数；当天为分钟级刻度（2~60 分钟自适应 ≥12 桶，补桶不跨天）
+- **使用趋势**：渐变面积图，左轴 token 构成，右轴切换预估费用 / 请求次数；当天为分钟级刻度（2~60 分钟自适应 ≥12 桶，补桶不跨天），悬浮提示显示桶区间（如 `15:00~15:30`）
 
 <!-- TODO: 使用趋势图（含顶部统计卡与筛选行） -->
 ![使用趋势](docs/images/usage-trend.png)
@@ -101,7 +101,7 @@ dsh plugin --profile web add github:licyer/dsh-token-monitor
 
 配置文件：`$DSH_HOME/storages/token-monitor/config.json`（Windows 默认 `C:\Users\<你>\.dsh\storages\token-monitor\config.json`）。
 
-设置入口：DSH 设置面板（左下角齿轮）→ **Token Monitor** 页，表单保存后即时写回该文件。三个设置项：默认时间窗 / 余量轮询间隔（秒）/ 请求记录保留时间（天）。
+设置入口：DSH 设置面板（左下角齿轮）→ **Token Monitor** 页，表单保存后即时写回该文件。三个设置项：默认时间窗 / 余量轮询间隔（秒）/ 请求记录保留时间（天）；下方另附**已适配供应商清单**（哪些提供方已适配、开发者是否用真实凭证验证过）。
 
 | 字段 | 默认值 | 含义 |
 | --- | --- | --- |

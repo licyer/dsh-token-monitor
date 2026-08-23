@@ -340,7 +340,7 @@ CREATE TABLE IF NOT EXISTS provider_mappings (
 - `GET /token-monitor/usage/daily?days=N` → **session 聚焦读 rollup 的 `session_id` 维度**（会话历史永久，不受明细清理影响）；当天（days=1）读明细（数据实时写入）；多天读 rollup（client/provider/model 筛选直接在 rollup 上做；provider 参数为 vendor id 时展开 `IN`）：`[{ day, model, requests, input_tokens, output_tokens, cache_read_tokens, cost_usd, unpriced_requests, ttft_avg_ms }]`
 - `GET /token-monitor/usage/by-model?days=N` → 读 rollup 按模型汇总（含 client 维度，筛选同上）
 - `GET /token-monitor/usage/sessions?day=...` → 读明细表按会话下钻（低频，量小；联查 `fold_watermarks` 取会话标题）
-- `GET /token-monitor/usage/hourly` → 当天趋势（读明细分钟级聚合，渲染就绪 buckets，含平均 TTFT；颗粒度 60/30/15/10/5/2 分钟自适应 ≥12 桶，**补桶不跨天**——当天图不出现昨天刻度）
+- `GET /token-monitor/usage/hourly` → 当天趋势（读明细分钟级聚合，渲染就绪 buckets，含平均 TTFT；颗粒度 60/30/15/10/5/2 分钟自适应 ≥12 桶，**补桶不跨天**——当天图不出现昨天刻度；返回 `step`（桶间隔分钟），前端 tooltip 显示桶区间如 `15:00~15:30`）
 - `GET /token-monitor/usage/distribution` → 供应商×模型分布柱状图（**读 rollup 全量**，token 四桶口径；**按 vendor 聚合**、渲染全部模型不 Top8 截断，附加 `modelVendor`/`vendorModels` 供前端配色与 tooltip）
 - `GET /token-monitor/usage/calendar` → 年度消耗热力（**读 rollup 近 365 天**）
 - `GET /token-monitor/usage/rank` → 使用排行（**读 rollup 全量**，model/vendor/client 三维度——供应商维度按 vendor 聚合，`providers` 集合保留原始 provider id 供组合列展开）
