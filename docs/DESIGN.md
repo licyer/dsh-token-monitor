@@ -459,6 +459,11 @@ CREATE TABLE IF NOT EXISTS sync_logs (
 
 Host 路由（当前实现）：`GET /token-monitor/sync/pending`（弹层打开时拉一次 + 同步后重拉）/ `POST /token-monitor/import/cc-switch`（读本机 db 导入；返回 `{ imported, skipped, skippedUnknownApp, filesScanned, errors }`）。通用 `POST /token-monitor/sync { source? }` 路由为将来多源预留，当前未实现（§12 或单源先跑通后加）。
 
+**DSH 跨设备同步（2026-08 新增，§2.2 扩展）**：用量页数据来源卡片 DSH 行「导出 / 导入」：
+
+- `GET /token-monitor/export/dsh` → 本机 `source='dsh-logs'` 全量快照的 JSON（`detail` = usage_requests 全部行 + `rollups` = usage_daily_rollups 全部行 + 元信息 `kind/version/exportedAt/source`）。成本随行导出（不按接收端定价表重算）；`day` 为导出机折叠时冻结的本地日期（跨时区归源机视角）。
+- `POST /token-monitor/import/dsh`（body = 导出文件内容，落临时文件解析）→ 幂等合并：明细裸 `INSERT OR IGNORE`（record_id 主键去重，**不走 recordUsage**——避免明细插入联动 rollup 累加把接收端同键聚合翻倍）；rollup 覆盖语义 upsert（`ON CONFLICT ... DO UPDATE SET = excluded`）。`record_id = "${sessionId}:${seq}"`（DSH 会话 UUID + 会话内序号），跨设备不相交 → 正常导入是纯新增；覆盖语义仅在"重复导入同文件 / 增量同步撞键 / 同会话日志被拷贝到两台设备"时触发，均为同值覆盖无副作用。审计写 `sync_logs`（`source='dsh-logs', kind='file-import'`，watermark 置 null——快照无增量游标，同 CC sql-import 约定）。
+
 **统计口径（2026-08-20 定稿）**：导入结果**只向用户展示两数**——`imported`（新导入）与 `skippedUnknownApp`（未知应用跳过）。已导入的重复行（主键冲突）与白名单内正常导入都不算"跳过"、不统计；`skipped` 字段保留在返回体里供内部调试，前端提示条不显示它（避免"跳过 3180 条"这类对重复数据的误导性提示）。
 
 ## 12. 后续扩展（预留，不做）
