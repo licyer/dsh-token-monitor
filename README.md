@@ -121,6 +121,7 @@ dsh plugin --profile web add github:licyer/dsh-token-monitor
 | 供应商 | 提供方 | 适配说明 |
 | --- | --- | --- |
 | Kimi（Moonshot AI） | Kimi For Coding | 订阅制额度：5h / 7d / 权益等级（百分比与重置倒计时） |
+| Moonshot（国内） | 月之暗面（moonshotai-cn） | 按量付费：账户余额（¥，可用/赠送/现金） |
 | DeepSeek | DeepSeek 官方 | 按量付费：账户余额 |
 | OpenCode | OpenCode Go | 订阅制额度：5h / 7d / 30d （百分比与重置倒计时） |
 | — | 其他提供方 | 未适配 |
