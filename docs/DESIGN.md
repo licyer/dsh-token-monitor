@@ -14,7 +14,7 @@
 | §4.2 | `fold_watermarks` 水位表 | ✅ 已实现 |
 | §4.3 | `usage_daily_rollups` 预聚合表 | ✅ 已实现 |
 | §4.4 | 模型归属规则 | ✅ 已实现（折叠游标） |
-| §4.5 | `provider_mappings` 提供方映射表（vendor 归并） | ✅ 已实现（`provider-mappings.js` 种子 + 启动幂等写入；distribution/rank 按 vendor 聚合） |
+| §4.5 | 提供方映射（vendor 归并） | ✅ 已实现（`provider-mappings.js` 单文件维护，不入库；distribution/rank 按 vendor 聚合） |
 | §5 | 定价与费用口径 | ✅ 已实现（唯源 pi-ai；CC 定价不导入；2026-08-21 加 USD→CNY 汇率展示换算） |
 | §6 | CC 导入（db 导入） | ✅ 已实现（`importCcSwitch` + `checkCcPending`） |
 | §6 | CC 导入（历史聚合迁移 `usage_daily_rollups`） | ✅ 已实现（`importCcRollups`：覆盖 upsert + `db-rollup` 独立水位） |
@@ -259,21 +259,12 @@ CC 导入走同一个 upsert（`session_id` 传 `''`）；CC 历史迁移走覆�
 
 `assistant/message` 本身不带模型。折叠时维护"最近一个 `request/context` 的 (provider, model)"游标，后续 usage 行归到该路由；会话中途换模型时归属自动切换。
 
-### 4.5 `provider_mappings` —— 提供方映射表
+### 4.5 提供方映射（JS 单文件维护，不再入库）
 
-**粒度**：一行 = 一个提供方 ID（库内存储值）。查询层把 `provider_id` 换成提供方名称 / 供应商，聚合按 vendor 归并（如 `kimi-coding` + `moonshotai-cn` + `moonshotai` → vendor `kimi` 月之暗面）。
+**粒度**：一行 = 一个提供方 ID。查询层把 `provider_id` 换成提供方名称 / 供应商，聚合按 vendor 归并（如 `kimi-coding` + `moonshotai-cn` + `moonshotai` → vendor `kimi`）。
 
-```sql
-CREATE TABLE IF NOT EXISTS provider_mappings (
-  provider_id   TEXT PRIMARY KEY,   -- 提供方 ID（kimi-coding / moonshotai-cn / deepseek…）
-  provider_name TEXT NOT NULL,      -- 提供方名称（Kimi For Coding / 月之暗面 / DeepSeek…）
-  vendor        TEXT NOT NULL,      -- 供应商（kimi / deepseek / zhipu…）
-  sort_order    INTEGER NOT NULL DEFAULT 0
-);
-```
-
-- **种子**：`lib/util/provider-mappings.js`（`PROVIDER_MAPPING_SEED`，2026-08 按 pi-ai 目录模型归属整理），启动时幂等写入（已存在不覆盖，保留用户手动改的）；未映射的 provider 原样显示 id。
-- **查询层**：`distribution`/`rank` 按 vendor 聚合（柱状图供应商轴与排行"供应商"维度），筛选参数是 vendor id 时 `providerCond` 展开为 `provider IN (…pids)`；overview 的 label 统一为 provider_name。
+- **唯一权威源**：`lib/util/provider-mappings.js`（`PROVIDER_MAPPING_SEED` + `VENDOR_LABELS`，2026-08 按 pi-ai 目录模型归属整理）。2026-08-24 起**不再同步进 `provider_mappings` 表**——表只是 JS 数据的缓存，徒增迁移面；旧库遗留表启动时 `DROP TABLE IF EXISTS` 清理。未映射的 provider 原样显示 id。
+- **查询层**：`distribution`/`rank` 按 vendor 聚合（柱状图供应商轴与排行"供应商"维度），筛选参数是 vendor id 时 `providerCond` 展开为 `provider IN (…pids)`；overview 的 label 统一为 provider_name；`GET /token-monitor/provider-mappings` 把映射全表下发给客户端（客户端动态合并、硬编码兜底）。
 
 ## 5. 定价与费用口径
 
