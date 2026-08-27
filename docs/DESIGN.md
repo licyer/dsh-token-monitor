@@ -340,7 +340,7 @@ CC 导入走同一个 upsert（`session_id` 传 `''`）；CC 历史迁移走覆�
 - `POST /token-monitor/import/cc-switch/sql` → SQL 文件导入（body 为文件内容）
 - `GET /token-monitor/sync/pending` → 本机 CC 库未同步探测（增量）
 
-**供应商抓取器**（`GET /token-monitor/overview`）：`kimi-coding`（订阅额度 5h/7d + 权益等级）、`deepseek`（账户余额）、`opencode-go`（OpenCode 订阅额度，`OPENCODE_GO_API_KEY`，rolling/weekly/monthly 三窗口 5h/7d/30d，2026-08-21 新增）——抓取器注册表 `FETCHERS` 键与 DSH 路由名对齐，徽标可直接定位；overview 下发 label 统一为 `provider_mappings` 的提供方名。
+**供应商抓取器**（`GET /token-monitor/overview`）：注册表 `FETCHERS`（`lib/util/fetch-quotas.js`）共 9 个——`kimi-coding`（订阅额度 5h/7d + 权益等级）、`moonshotai-cn`（按量余额 CNY，现金/代金券明细）、`deepseek`（账户余额）、`opencode-go`（订阅额度 5h/7d/30d）、`openrouter`（积分余额，1 积分 = $1，本月/总消耗）、`minimax`/`minimax-cn`（Token 套餐 5h/7d 剩余%）、`zai`/`zai-coding-cn`（Coding 套餐 5h/7d，窗口自动识别）——FETCHERS 键与 DSH 路由名对齐，徽标可直接定位；overview 下发 label 统一为 `provider-mappings.js` 的提供方名（映射 JS 单文件维护，不入库）。
 
 界面路线（已评审定稿）：
 
