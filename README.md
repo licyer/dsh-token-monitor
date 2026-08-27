@@ -49,7 +49,10 @@ dsh plugin --profile web add github:licyer/dsh-token-monitor
 
 ### 余量监控
 
-徽标显示当前模型供应商的余量：**订阅制**供应商（如 Kimi For Coding）显示滚动窗口与周额度百分比；**按量付费**供应商（如 DeepSeek 官方）显示账户余额。
+徽标显示当前模型供应商的余量：
+
+1. **订阅制**供应商（如 Kimi For Coding）：显示滚动窗口与周额度百分比
+2. **按量付费**供应商（如 DeepSeek 官方）：显示账户余额
 
 点击徽标弹出详情层：当前提供方指标、本会话 token 用量（可切换会话）、全部提供方折叠区、cc-switch 数据同步提示条、更新时间与刷新。
 
@@ -99,14 +102,14 @@ dsh plugin --profile web add github:licyer/dsh-token-monitor
 
 | 提供方 | 类型 | 适配说明 | 验证状态 |
 | --- | --- | --- | --- |
-| Kimi For Coding（`kimi-coding`） | 订阅额度 | 5h / 7d / 权益等级（百分比与重置倒计时） | ✅ 已验证 |
-| Moonshot AI（CN）（`moonshotai-cn`） | 按量余额 | 可用余额（CNY）+ 现金/代金券明细 | ✅ 已验证 |
-| DeepSeek（`deepseek`） | 按量余额 | 账户余额（按币种账户显示） | ✅ 已验证 |
-| OpenCode Go（`opencode-go`） | 订阅额度 | 5h / 7d / 30d（百分比与重置倒计时） | ✅ 已验证 |
-| OpenRouter（`openrouter`） | 预充值余额 | 账户余额（$）+ 本月/总消费 | ⚠️ 待真实 key 验证 |
-| MiniMax / MiniMax（CN）（`minimax` / `minimax-cn`） | Token 套餐 | 5h / 7d 用量百分比（剩余%） | ⚠️ 待真实 key 验证 |
-| 智谱 / 智谱 Coding（CN）（`zai` / `zai-coding-cn`） | Coding 套餐 | 5h / 7d 用量百分比（窗口自动识别，含重置时间） | ⚠️ 待真实 key 验证 |
-| — | 其他提供方 | 未适配 | — |
+| `kimi-coding` | 订阅额度 | 5h / 7d / 权益等级（百分比与重置倒计时） | ✅ 已验证 |
+| `moonshotai-cn` | 按量余额 | 可用余额（CNY）+ 现金/代金券明细 | ✅ 已验证 |
+| `deepseek` | 按量余额 | 账户余额（按币种账户显示） | ✅ 已验证 |
+| `opencode-go` | 订阅额度 | 5h / 7d / 30d（百分比与重置倒计时） | ✅ 已验证 |
+| `openrouter` | 按量余额 | 账户余额（$）+ 本月/总消费 | ⚠️ 待真实 key 验证 |
+| `minimax` / `minimax-cn` | 订阅额度 | 5h / 7d 用量百分比（剩余%） | ⚠️ 待真实 key 验证 |
+| `zai` / `zai-coding-cn` | 订阅额度 | 5h / 7d 用量百分比（窗口自动识别，含重置时间） | ⚠️ 待真实 key 验证 |
+| — | — | 未适配 | — |
 
 > **验证状态说明**：✅ = 长期运行、真实响应结构已验证；⚠️ = 已实现并通过 mock 测试，但**未用真实 key 校准**（响应结构以参考实现为准，若有出入请发抓取返回的 `raw` 原文校准）。
 
