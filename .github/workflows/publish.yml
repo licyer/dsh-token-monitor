@@ -1,0 +1,45 @@
+# 手动发布到 npm（workflow_dispatch）。
+#
+# 设计约束（2026-08-24 定稿）：
+# - 只允许手动触发，绝不监听 tag/push——tag 误打可删，npm 包撤不回，发版必须是人按下的。
+# - 强制确认输入（输入 publish 才跑），防误点。
+# - 发布前校验 package.json 版本未在 npm 上存在（重复版本 npm 会 403，提前失败更友好）。
+#
+# 前置：仓库 Settings → Secrets and variables → Actions 添加 NPM_TOKEN
+# （npmjs.com → Access Tokens → Granular Access Token，勾 bypass 2FA，权限限本包 read+write）。
+
+name: Publish to npm
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: "输入 publish 确认发布"
+        required: true
+        default: ""
+
+jobs:
+  publish:
+    if: github.event.inputs.confirm == 'publish'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: 校验版本未发布过
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if npm view "dsh-token-monitor@$VERSION" version 2>/dev/null; then
+            echo "::error::版本 $VERSION 已在 npm 上存在，先 bump package.json 的 version"
+            exit 1
+          fi
+          echo "准备发布 $VERSION"
+
+      - name: npm publish
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
