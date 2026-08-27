@@ -14,13 +14,14 @@ on:
   workflow_dispatch:
     inputs:
       confirm:
-        description: "输入 publish 确认发布"
+        description: "输入 OK 确认发布"
         required: true
         default: ""
 
 jobs:
   publish:
-    if: github.event.inputs.confirm == 'publish'
+    # OK/ok/Ok/oK 均可确认（误点防护，不分大小写）
+    if: contains(fromJSON('["OK","ok","Ok","oK"]'), github.event.inputs.confirm)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
