@@ -35,7 +35,7 @@ jobs:
         run: |
           VERSION=$(node -p "require('./package.json').version")
           if npm view "dsh-token-monitor@$VERSION" version 2>/dev/null; then
-            echo "::error::版本 $VERSION 已在 npm 上存在，先 bump package.json 的 version"
+            echo "::error::版本 $VERSION 已在 npm 上存在，请先升级 package.json 的 version（如 1.0.2 → 1.0.3）"
             exit 1
           fi
           echo "准备发布 $VERSION"
