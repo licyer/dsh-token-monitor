@@ -118,7 +118,17 @@ dsh plugin --profile web add github:licyer/dsh-token-monitor
 <details>
 <summary><strong>徽标没显示或"查询失败"？</strong></summary>
 
-A: 确认供应商凭证已配置（DSH credentials：`~/.dsh/.credentials.yaml`，或对应环境变量如 `DEEPSEEK_API_KEY`）；端点漂移可在配置里覆盖 `url`。
+A: 徽标 / 弹层对提供方的提示分两种（统一文案，不显示具体错误）：
+
+**显示"未配置 API Key"** = 该供应商的凭证没配（DSH credentials：`~/.dsh/.credentials.yaml`，或环境变量如 `DEEPSEEK_API_KEY` / `KIMI_CODING_API_KEY`）——配置凭证后自动恢复。
+
+**显示"查询失败"** = 凭证已配置但余量接口查询失败，按条排查：
+
+1. **接口请求失败**：网络不通、超时，或端点返回错误状态（4xx 鉴权失败、5xx 服务端异常）
+2. **端点漂移**：供应商 API 地址变更（常见 404），在插件配置里用 `providers.<id>.url` 覆盖
+3. **响应无法解析**：接口返回 200 但字段结构异常（额度字段缺失 / 格式不对），无法提取余量
+
+> 注意：若显示"插件未适配该提供方"，则是该提供方尚未适配，与以上无关。
 
 </details>
 
