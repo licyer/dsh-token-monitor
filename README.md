@@ -23,7 +23,7 @@ DeepSeek Harness（DSH）Web 界面的大模型**余量与用量监控**插件�
 > [!NOTE]
 > 需要 **Node.js ≥ 22**（依赖内置 `node:sqlite`）。仅支持 DSH Web 端（`platform: web`）。
 >
-> 实测环境：DSH **0.1.2-rc.1**（0.1.1 的旧接口差异做了兼容回退；更高版本未验证）。
+> 实测环境：DSH **0.1.2-rc.1**（对 0.1.1 的旧接口做了兼容回退，但**会话数据不可跨版本回退**——0.1.2 写过的会话 0.1.1 无法打开，回退版本需连会话数据一起回退；更高版本未验证）。
 
 ### 从 npm（推荐）
 
@@ -146,6 +146,18 @@ A: 用量来自会话日志采集：确认 `$DSH_HOME/sessions` 下有会话日�
 <summary><strong>费用准不准？</strong></summary>
 
 A: 按 pi-ai 本地刊例价估算，仅供参考、非实际账单；订阅制不产生真实扣费。未定价模型计入 token 不计入费用。
+
+</details>
+
+<details>
+<summary><strong>升级 DSH 后再回退旧版，会话打不开 / 弹层显示"未配置模型"？</strong></summary>
+
+A: 这是 **DSH 会话数据单向向前**导致的，与插件无关。DSH 的会话日志带事件白名单校验：新版新增的事件若未标 `ignorable`，旧版会把整份日志判为"由更新的 harness 写入"并拒读（典型报错 `resume failed … SessionFormatUnsupportedError: event type "…" unknown to this harness and not marked ignorable …`），于是：
+
+- 该会话在旧版里**点开即失败（无法恢复）**；
+- 弹层因此拿不到当前模型，显示"未配置 / 未识别模型"。
+
+**举例**：0.1.2 起，会话日志会写入 `model/selection` 等 0.1.1 没有的新事件。若你在 0.1.2 期间创建或续写过某个会话，再回退到 0.1.1，这个会话就会打不开——0.1.1 不认识 `model/selection`，直接拒绝整份日志；该会话在 0.1.1 下无法恢复，**改日志或跳过校验只会损坏数据**。
 
 </details>
 

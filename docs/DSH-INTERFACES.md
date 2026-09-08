@@ -73,7 +73,7 @@
 |---|---|---|---|---|
 | DSH 家目录 | `dshHome = $DSH_HOME \|\| ~/.dsh`（index.js、store.js） | 定位会话日志/配置/凭证 | 通用 | 路径约定 |
 | 会话日志目录/文件 | `~/.dsh/sessions/<project>/<sessionDir>/session.jsonl.zstd`（fold.js `foldAllSessions` / `readSessionLog`） | 用量折叠数据源（水印增量） | 0.1.2 实测重折叠正常（0.1.1→0.1.2 升级后曾删表重折叠归正） | 目录结构、文件扩展/压缩格式 |
-| 会话日志事件行格式 | fold.js 内 `switch (event.type)`：`request/context`（低频 route 游标）、`step/start`、`assistant/chunk`、`session/title`、`assistant/message{usage:{inputTokens,outputTokens,cacheReadTokens,cacheWriteTokens}, message:{source:{provider,model}}}`；行含 `type/seq/time/data` | 折叠 provider/model/四桶/首 token 时延 | 消息自带 `message.source` 为真源（曾误记 opencode-go 教训） | 事件 type/字段变化、usage 口径、source 语义 |
+| 会话日志事件行格式 | fold.js 内 `switch (event.type)`：`request/context`（低频 route 游标）、`step/start`、`assistant/chunk`、`session/title`、`assistant/message{usage:{inputTokens,outputTokens,cacheReadTokens,cacheWriteTokens}, message:{source:{provider,model}}}`；行含 `type/seq/time/data` | 折叠 provider/model/四桶/首 token 时延 | 消息自带 `message.source` 为真源（曾误记 opencode-go 教训）。**事件面单向向前**：新版新增事件若不标 `ignorable`（如 0.1.2 的 `model/selection`），旧版会整会话拒读（`resume failed … SessionFormatUnsupportedError`），会话数据不可跨版本回退 | 事件 type/字段变化、usage 口径、source 语义、新增事件是否带 `ignorable` |
 | 插件自管配置 | `~/.dsh/storages/token-monitor/config.json`（config 路由） | 轮询/供应商 URL 等配置 | 两版通用 | storages 目录约定 |
 | profile 依赖清单 | `~/.dsh/profiles/web/package.json`（upgrade 路由读取） | 判定安装通道（link/github/npm） | 通用 | 目录/字段 |
 | 凭证托管文件 | `~/.dsh/.credentials.yaml`（fetch-quotas 注释） | key 来源说明（`refs:` / `records:` 结构） | 0.1.2 重写含 records 但 refs 仍被 resolve 使用（实测 key 完整） | 文件结构解析方属官方，只读 |
@@ -95,3 +95,4 @@
 5. 服务端 `webServer / llm.listProviders / credentials.resolve`（F 表；0.1.2 已实测）。
 6. 会话日志格式（G 表）——格式变化需删表重折叠并提示用户。
 7. `dsh.client.inject`、`cordis.patch.yml` 声明（A 表）。
+8. **跨版本回退**（实测踩坑）：0.1.2 写过的会话在 0.1.1 上 `resume failed`（0.1.2 新增 `model/selection` 等事件未标 `ignorable`，旧版整会话拒读）。插件对旧版只做接口级兼容，**数据不可跨版本回退**；切回旧版必须连同会话数据一起回退（备份/移出新版期间新建或续写的会话）。
