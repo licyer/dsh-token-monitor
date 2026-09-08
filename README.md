@@ -2,11 +2,11 @@
 
 # dsh-token-monitor
 
-[![release](https://img.shields.io/github/v/release/licyer/dsh-token-monitor.svg)](https://github.com/licyer/dsh-token-monitor/releases)
-<a href="https://www.npmjs.com/package/dsh-token-monitor" target="_blank" rel="noopener noreferrer"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-token-monitor.svg"></a>
-[![license](https://img.shields.io/npm/l/dsh-token-monitor.svg)](LICENSE)
+<a href="https://www.npmjs.com/package/dsh-token-monitor" target="_blank" rel="noopener noreferrer"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-token-monitor.svg?color=CB3837"></a>
+[![release](https://img.shields.io/github/v/release/licyer/dsh-token-monitor.svg?color=24292f)](https://github.com/licyer/dsh-token-monitor/releases)
+[![license](https://img.shields.io/npm/l/dsh-token-monitor.svg?color=lightgrey)](LICENSE)
+[![dsh](https://img.shields.io/badge/dsh-0.1.2--rc.1-3964fe)](https://github.com/deepseek-ai/deepseek-harness)
 [![node](https://img.shields.io/badge/node-22.5.0%2B-339933)](https://nodejs.org)
-[![dsh](https://img.shields.io/badge/dsh-0.1.2--rc.1-326ce5)](https://github.com/deepseek-ai/deepseek-harness)
 
 [安装](#安装) · [功能](#功能) · [插件配置](#插件配置) · [供应商适配](#供应商适配) · [常见问题](#常见问题) · [设计](#设计) · [开发](#开发)
 
