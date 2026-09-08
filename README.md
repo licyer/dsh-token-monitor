@@ -22,6 +22,7 @@ DeepSeek Harness（DSH）Web 界面的大模型**余量与用量监控**插件�
 
 > [!NOTE]
 > 需要 **Node.js ≥ 22**（依赖内置 `node:sqlite`）。仅支持 DSH Web 端（`platform: web`）。
+>
 > 实测环境：DSH **0.1.2-rc.1**（0.1.1 的旧接口差异做了兼容回退；更高版本未验证）。
 
 ### 从 npm（推荐）
