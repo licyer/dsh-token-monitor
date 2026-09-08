@@ -3,7 +3,7 @@
 # dsh-token-monitor
 
 [![release](https://img.shields.io/github/v/release/licyer/dsh-token-monitor.svg)](https://github.com/licyer/dsh-token-monitor/releases)
-[![npm version](https://img.shields.io/npm/v/dsh-token-monitor.svg)](https://www.npmjs.com/package/dsh-token-monitor)
+<a href="https://www.npmjs.com/package/dsh-token-monitor" target="_blank" rel="noopener noreferrer"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-token-monitor.svg"></a>
 [![license](https://img.shields.io/npm/l/dsh-token-monitor.svg)](LICENSE)
 [![node](https://img.shields.io/badge/node-%3E%3D22-339933)](https://nodejs.org)
 
