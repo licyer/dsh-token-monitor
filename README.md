@@ -109,6 +109,7 @@ dsh plugin --profile web add github:licyer/dsh-token-monitor
 | `moonshotai-cn` | 按量余额 | 可用余额（CNY）+ 现金/代金券明细 | ✅ 已验证 |
 | `deepseek` | 按量余额 | 账户余额（按币种账户显示） | ✅ 已验证 |
 | `opencode-go` | 订阅额度 | 5h / 7d / 30d（百分比与重置倒计时） | ✅ 已验证 |
+| `commandcode` | 订阅额度 | 月额度 + 5h / 7d 滚动窗口（已用百分比与重置倒计时；额外结转额度单独行） | ✅ 已验证（个人账号实测；org 组织账号 / Provider 按量账号路径待校准） |
 | `openrouter` | 按量余额 | 积分余额（1 积分 = $1）+ 本月/总消耗 | ✅ 已验证 |
 | `minimax` / `minimax-cn` | 订阅额度 | 5h / 7d 用量百分比（剩余%） | ⚠️ 待真实 key 验证 |
 | `zai` / `zai-coding-cn` | 订阅额度 | 5h / 7d 用量百分比（窗口自动识别，含重置时间） | ⚠️ 待真实 key 验证 |
