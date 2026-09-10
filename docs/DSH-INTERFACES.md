@@ -72,7 +72,7 @@
 | 触点 | 定位检索词 | 用途 | 兼容面 / 备注 | 升级核对点 |
 |---|---|---|---|---|
 | DSH 家目录 | `dshHome = $DSH_HOME \|\| ~/.dsh`（index.js、store.js） | 定位会话日志/配置/凭证 | 通用 | 路径约定 |
-| 会话日志目录/文件 | `~/.dsh/sessions/<project>/<sessionDir>/session.jsonl.zstd`（fold.js `foldAllSessions` / `readSessionLog`） | 用量折叠数据源（水印增量） | 0.1.2 实测重折叠正常（0.1.1→0.1.2 升级后曾删表重折叠归正） | 目录结构、文件扩展/压缩格式 |
+| 会话日志目录/文件 | `~/.dsh/sessions/<project>/<sessionDir>/session[.v<N>].jsonl.zstd`（fold.js `resolveSessionLog` / `foldAllSessions` / `readSessionLog`） | 用量折叠数据源（水印增量） | **文件名随 DSH 版本演进**：0.1.4 及以前是 `session.jsonl.zstd`，**0.1.5 起改为版本化的 `session.v3.jsonl.zstd`**。fold.js 已改为**按目录发现 + 版本择新**（无版本记 0），不再写死文件名；同会话"换名"会被识别为换了文件并重置字节偏移重折叠（`record_id = sessionId:seq` 主键去重，不重复计费） | 目录结构、**日志文件名 / 命名版本号**、压缩格式 |
 | 会话日志事件行格式 | fold.js 内 `switch (event.type)`：`request/context`（低频 route 游标）、`step/start`、`assistant/chunk`、`session/title`、`assistant/message{usage:{inputTokens,outputTokens,cacheReadTokens,cacheWriteTokens}, message:{source:{provider,model}}}`；行含 `type/seq/time/data` | 折叠 provider/model/四桶/首 token 时延 | 消息自带 `message.source` 为真源（曾误记 opencode-go 教训）。**事件面单向向前**：新版新增事件若不标 `ignorable`（如 0.1.2 的 `model/selection`），旧版会整会话拒读（`resume failed … SessionFormatUnsupportedError`），会话数据不可跨版本回退 | 事件 type/字段变化、usage 口径、source 语义、新增事件是否带 `ignorable` |
 | 插件自管配置 | `~/.dsh/storages/token-monitor/config.json`（config 路由） | 轮询/供应商 URL 等配置 | 两版通用 | storages 目录约定 |
 | profile 依赖清单 | `~/.dsh/profiles/web/package.json`（upgrade 路由读取） | 判定安装通道（link/github/npm） | 通用 | 目录/字段 |

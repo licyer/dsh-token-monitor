@@ -141,6 +141,26 @@ dsh plugin --profile web add github:licyer/dsh-token-monitor
 </details>
 
 <details>
+<summary><strong>某个时间点之后用量就不再更新了？</strong></summary>
+
+多半是 **DSH 换了会话日志的文件名**。0.1.4 及以前是 `session.jsonl.zstd`，**0.1.5 起改为版本化的 `session.v3.jsonl.zstd`**。插件早期版本把文件名写死成前者，改名后一个文件都匹配不到——既不报错也不打日志，采集就静默停摆了（表现为页面上"最新一条"卡在某个时刻不动）。
+
+现在改为在会话目录内**按目录发现 + 版本择新**，后续 DSH 再推 v4/v5 也无需改代码；若再次出现"一个日志文件都没匹配到"，会在宿主日志里打一条 warn 提示。
+
+处理步骤：
+
+1. 升级插件后**重启 DSH**（改的是服务端 `lib/util/`，不重启不生效）；
+2. 停摆期间的数据只要日志还在，重启后下一轮扫描（≤5 分钟）会自动补上；
+3. 若期间 DSH 升级 / 迁移把整个 `sessions` 目录挪走了（留下 `sessions_backup_*`），这些会话不在常规扫描范围内，用回填脚本补：
+
+```sh
+node scripts/backfill-sessions.mjs --dry-run   # 先在库副本上预演，报告将新增多少（不写库）
+node scripts/backfill-sessions.mjs             # 正式回填（幂等，可重复执行）
+```
+
+</details>
+
+<details>
 <summary><strong>费用准不准？</strong></summary>
 
 费用按**定价表**估算：内置 DeepSeek 官方价（含高峰倍率与已公布即将生效档），可在"用量页底部 → 模型定价"自行维护或覆盖；表里没有的模型用 pi-ai 刊例价兜底，都没有则计入 token 不计入费用。仅供参考、非实际账单；订阅制不产生真实扣费。
@@ -191,6 +211,16 @@ dsh plugin --profile web add link:/path/to/dsh-token-monitor   # 本地路径挂
 
 - 改前端（`lib/client.js`）：HMR 热替换，刷新即生效
 - 改服务端（`lib/index.js` / `lib/util/`）：需重启 `dsh web` 进程
+
+### 运维脚本
+
+```sh
+node scripts/backfill-sessions.mjs --list       # 列出可回填的历史会话目录
+node scripts/backfill-sessions.mjs --dry-run    # 在库副本上真实预演（不写生产库）
+node scripts/backfill-sessions.mjs              # 回填（幂等，可重复执行）
+```
+
+用于把 DSH 升级 / 目录迁移时被挪走的旧会话日志（`$DSH_HOME/sessions_backup_*`）补进统计。
 
 ## 许可证
 
