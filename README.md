@@ -5,7 +5,7 @@
 <a href="https://www.npmjs.com/package/dsh-token-monitor" target="_blank" rel="noopener noreferrer"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-token-monitor.svg?color=CB3837"></a>
 [![release](https://img.shields.io/github/v/release/licyer/dsh-token-monitor.svg?color=24292f)](https://github.com/licyer/dsh-token-monitor/releases)
 [![license](https://img.shields.io/npm/l/dsh-token-monitor.svg?color=lightgrey)](LICENSE)
-[![dsh](https://img.shields.io/badge/dsh-0.1.2--rc.1-3964fe)](https://github.com/deepseek-ai/deepseek-harness)
+[![dsh](https://img.shields.io/badge/dsh-0.1.5--rc.1-3964fe)](https://github.com/deepseek-ai/deepseek-harness)
 [![node](https://img.shields.io/badge/node-22.5.0%2B-339933)](https://nodejs.org)
 
 [安装](#安装) · [功能](#功能) · [插件配置](#插件配置) · [供应商适配](#供应商适配) · [常见问题](#常见问题) · [设计](#设计) · [开发](#开发)
@@ -23,7 +23,7 @@ DeepSeek Harness（DSH）Web 界面的大模型**余量与用量监控**插件�
 > [!NOTE]
 > 需要 **Node.js ≥ 22.5.0**（依赖内置 `node:sqlite`）。仅支持 DSH Web 端（`platform: web`）。
 >
-> 实测环境：DSH **0.1.2-rc.1**（对 0.1.1 的旧接口做了兼容回退，但**会话数据不可跨版本回退**——0.1.2 写过的会话 0.1.1 无法打开；更高版本未验证）。
+> 实测环境：DSH **0.1.5-rc.1**（保留对 0.1.1 的旧接口兼容回退；**会话数据不可跨版本回退**——高版本写过的会话低版本无法打开）。
 
 ### 从 npm（推荐）
 
@@ -46,7 +46,7 @@ dsh plugin --profile web add github:licyer/dsh-token-monitor
 | 余量徽标 | 会话头部显示当前模型供应商余量（`k3 · 5h 剩 82%`），点击弹详情层 |
 | 用量页签 | 与"对话 / 轨迹"并列：token 用量、估算费用、趋势、排行、请求明细 |
 | 自动采集 | 自动采集 DSH 会话日志，后台定时 + 手动刷新 |
-| 历史导入 | 可导入 cc-switch 历史记录，重复导入不产生重复数据 |
+| 历史导入 | cc-switch 记录每 5 分钟自动同步；也支持手动导入与 SQL 文件导入，重复导入不产生重复数据 |
 | 跨设备同步 | DSH 用量支持导出/导入 JSON 快照（明细 + 聚合），不同设备记录合并到一台设备，幂等不重复 |
 | 语言跟随 | 界面文案跟随 DSH 中文 / 英文切换 |
 
@@ -57,7 +57,7 @@ dsh plugin --profile web add github:licyer/dsh-token-monitor
 1. **订阅制**供应商（如 Kimi For Coding）：显示滚动窗口与周额度百分比
 2. **按量付费**供应商（如 DeepSeek 官方）：显示账户余额
 
-点击徽标弹出详情层：当前提供方指标、本会话 token 用量（可切换会话）、全部提供方折叠区、cc-switch 数据同步提示条、更新时间与刷新。
+点击徽标弹出详情层：当前提供方指标、本会话 token 用量、全部提供方折叠区、cc-switch 自动同步失败提示条（仅失败时出现）、更新时间与刷新。
 
 ![余量徽标与详情弹层](docs/images/quota-popover.png)
 
@@ -85,7 +85,7 @@ dsh plugin --profile web add github:licyer/dsh-token-monitor
 
 ![请求记录](docs/images/usage-records.png)
 
-- **跨设备同步**：底部"数据来源"提供导出 / 导入按钮，把不同设备的使用记录合并到一台设备，重复导入无副作用）
+- **跨设备同步**：底部"数据来源"提供导出 / 导入按钮，把不同设备的使用记录合并到一台设备，重复导入无副作用
 
 ![跨设备同步](docs/images/usage-sync.png)
 
@@ -109,7 +109,7 @@ dsh plugin --profile web add github:licyer/dsh-token-monitor
 | `moonshotai-cn` | 按量余额 | 可用余额（CNY）+ 现金/代金券明细 | ✅ 已验证 |
 | `deepseek` | 按量余额 | 账户余额（按币种账户显示） | ✅ 已验证 |
 | `opencode-go` | 订阅额度 | 5h / 7d / 30d（百分比与重置倒计时） | ✅ 已验证 |
-| `commandcode` | 订阅额度 | 月额度 + 5h / 7d 滚动窗口（已用百分比与重置倒计时；额外结转额度单独行） | ✅ 已验证（个人账号实测；org 组织账号 / Provider 按量账号路径待校准） |
+| `commandcode` | 订阅额度 | 月额度 + 5h / 7d 滚动窗口（已用百分比与重置倒计时；额外结转额度单独行） | ✅ 已验证 |
 | `openrouter` | 按量余额 | 积分余额（1 积分 = $1）+ 本月/总消耗 | ✅ 已验证 |
 | `minimax` / `minimax-cn` | 订阅额度 | 5h / 7d 用量百分比（剩余%） | ⚠️ 待真实 key 验证 |
 | `zai` / `zai-coding-cn` | 订阅额度 | 5h / 7d 用量百分比（窗口自动识别，含重置时间） | ⚠️ 待真实 key 验证 |
@@ -121,9 +121,6 @@ dsh plugin --profile web add github:licyer/dsh-token-monitor
 
 <details>
 <summary><strong>徽标没显示或"查询失败"？</strong></summary>
-
-A: 徽标 / 弹层对提供方的提示分两种（统一文案，不显示具体错误）：
-
 **显示"未配置 API Key"** = 该供应商的凭证没配（DSH credentials：`~/.dsh/.credentials.yaml`，或环境变量如 `DEEPSEEK_API_KEY` / `KIMI_CODING_API_KEY`）——配置凭证后自动恢复。
 
 **显示"查询失败"** = 凭证已配置但余量接口查询失败，按条排查：
@@ -139,26 +136,45 @@ A: 徽标 / 弹层对提供方的提示分两种（统一文案，不显示具�
 <details>
 <summary><strong>用量页签没数据？</strong></summary>
 
-A: 用量来自会话日志采集：确认 `$DSH_HOME/sessions` 下有会话日志，点顶部"刷新"（先采集再查询）；CC 数据需在"数据来源"手动导入。
+用量来自会话日志采集：确认 `$DSH_HOME/sessions` 下有会话日志，点顶部"刷新"（先采集再查询）；cc-switch 记录每 5 分钟自动同步一次，失败时弹层会给出提示并可手动重试，"数据来源"里也可手动导入或导入 SQL 文件。
 
 </details>
 
 <details>
 <summary><strong>费用准不准？</strong></summary>
 
-A: 按 pi-ai 本地刊例价估算，仅供参考、非实际账单；订阅制不产生真实扣费。未定价模型计入 token 不计入费用。
+费用按**定价表**估算：内置 DeepSeek 官方价（含高峰倍率与已公布即将生效档），可在"用量页底部 → 模型定价"自行维护或覆盖；表里没有的模型用 pi-ai 刊例价兜底，都没有则计入 token 不计入费用。仅供参考、非实际账单；订阅制不产生真实扣费。
 
 </details>
 
 <details>
 <summary><strong>升级 DSH 后再回退旧版，会话打不开 / 弹层显示"未配置模型"？</strong></summary>
 
-A: 这是 **DSH 会话数据单向向前**导致的，与插件无关。DSH 的会话日志带事件白名单校验：新版新增的事件若未标 `ignorable`，旧版会把整份日志判为"由更新的 harness 写入"并拒读（典型报错 `resume failed … SessionFormatUnsupportedError: event type "…" unknown to this harness and not marked ignorable …`），于是：
+这是 **DSH 会话数据单向向前**导致的，与插件无关。DSH 的会话日志带事件白名单校验：新版新增的事件若未标 `ignorable`，旧版会把整份日志判为"由更新的 harness 写入"并拒读（典型报错 `resume failed … SessionFormatUnsupportedError: event type "…" unknown to this harness and not marked ignorable …`），于是：
 
 - 该会话在旧版里**点开即失败（无法恢复）**；
 - 弹层因此拿不到当前模型，显示"未配置 / 未识别模型"。
 
 **举例**：0.1.2 起，会话日志会写入 `model/selection` 等 0.1.1 没有的新事件。若你在 0.1.2 期间创建或续写过某个会话，再回退到 0.1.1，这个会话就会打不开——0.1.1 不认识 `model/selection`，直接拒绝整份日志；该会话在 0.1.1 下无法恢复，**改日志或跳过校验只会损坏数据**。
+
+</details>
+
+<details>
+<summary><strong>每次重启 DSH 都新开一个页面，开多了之后页面加载不出来（会话列表空、一直转圈）？</strong></summary>
+
+这是**浏览器同源并发连接被占满**，不是 DSH 的单页面限制，也与本插件无关。
+
+DSH Web 走 HTTP/1.1（没有 WebSocket / 多路复用），**单个页面就会对 `http://127.0.0.1:<port>` 维持 3 条左右的常驻/流式连接**；而浏览器对同一 origin 的并发连接有上限（Chrome 通常 6 条）。重启后如果每次都新开标签页、旧页面又不关，多个页面同时抢同一份配额，新页面的首屏请求和旧页面的刷新请求就都在排队/超时——表现就是"新页面空白、旧页面也转圈"；**关掉多余页面后，剩下的页面立刻恢复**。
+
+规避办法：
+
+1. **重启时不要自动开新页面**：用 `dsh web --no-open` 启动（不自动打开浏览器），再在已有标签页里刷新 / 重新打开地址即可，标签页就不会越积越多；不再需要的旧页面请关掉（重启后旧页面的连接已失效，刷新旧页面也可能连不上新进程）；
+
+2. 想自查连接占用（Windows）：
+   ```powershell
+   Get-NetTCPConnection -LocalPort <port> -State Established | Measure-Object | Select-Object Count
+   ```
+   单页约 3 条，随页面数增加；关掉页面后会回落。
 
 </details>
 
