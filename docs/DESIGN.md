@@ -48,7 +48,10 @@
 
 ### 2.1 DSH 会话日志（主源，增量折叠）
 
-- 位置：`$DSH_HOME/sessions/<cwd编码>/session-<id>/session.jsonl.zstd`；每次扫描重新 glob 整棵树，新会话目录自动发现。
+- 位置：`$DSH_HOME/sessions/<cwd编码>/session-<id>/session[.v<N>].jsonl.zstd`；每次扫描重新遍历整棵树，新会话目录自动发现。
+- **日志文件名带命名版本，不能写死**：0.1.4 及以前是 `session.jsonl.zstd`，0.1.5 起是 `session.v3.jsonl.zstd`。由 `resolveSessionLog()` 在会话目录内按 `/^session(?:\.v(\d+))?\.jsonl\.zstd$/` 发现并**择版本最高者**（无版本记 0），DSH 后续推 v4/v5 无需改代码。
+  - 踩坑记录：写死文件名 + `existsSync` 判断时，改名后命中数恒为 0，且 `imported=0` 不触发任何日志 → 采集静默停摆（实测 2026-09-10 起数据空白，页面上"最新一条"卡住不动）。因此 `foldAllSessions` 额外返回 `sessionDirs`，供调用方识别"目录存在但一个日志都没匹配到"。
+- **换名 / 换版本时的水位**：水位行记 `log_path`。若同一 session 的日志路径变了（升级后从 `session.jsonl.zstd` 变成 `session.v3.jsonl.zstd`），旧字节偏移对新文件无意义，折叠器会重置 `last_offset=0` 从头重折叠；老事件靠 `record_id = sessionId:seq` 主键 `INSERT OR IGNORE` 去重，不会重复计费。
 - 身份来自文件首行 header（实测）：`{"type":"session","version":0,"id":"session-…","createdAt":…,"cwd":"…"}`，水位按 header `id` 键控，不依赖目录名。
 - **文件是会话级而非天级**：一个会话跨多天 = 同一文件持续追加；事件 `seq` 每个文件独立从 0 递增（实测）。"按天"是折叠/查询时按事件 `time` 分组，与文件边界无关。
 - 格式：**多个独立 Zstandard 帧串接**，每帧解压后是若干行 JSONL。信封字段：`{ type, seq, time, data, ... }`，`time` 为毫秒时间戳。
@@ -317,9 +320,10 @@ CC 导入走同一个 upsert（`session_id` 传 `''`）；CC 历史迁移走覆�
 
 ## 7. 同步节奏（DSH 日志折叠）
 
-- 插件启动时全量扫一次 `$DSH_HOME/sessions/**/session.jsonl.zstd`（mtime ≤ 水位的跳过）。
+- 插件启动时全量扫一次 `$DSH_HOME/sessions/**/session[.v<N>].jsonl.zstd`（mtime ≤ 水位的跳过）。
 - 之后每 **5 分钟**增量扫；详情弹层打开时触发一次增量扫。
 - 每次只折叠 `seq > watermark.last_seq` 的事件，完成后推进水位。单遍顺序读，内存占用 O(1)。
+- **`extraRoots`（一次性历史回填）**：`foldAllSessions(..., extraRoots)` 可额外扫描 `$DSH_HOME` 下被挪走的旧日志树（DSH 升级 / 目录迁移会留下 `sessions_backup_*`）。**主根优先**：同 `sessionId` 只在 `$DSH_HOME/sessions` 里不存在时才折叠额外根里的副本，否则水位会被改写到备份路径、后续增量读的却是主根真实日志，增量会错乱。常规运行不传该参数，入口为 `scripts/backfill-sessions.mjs`（`--dry-run` 在库副本上真实预演）。
 - **明细清理挂载在折叠入口**（`foldOnce` 尾部，与折叠共用全部触发时机）：O(1) 内存时间闸（24h）在前，到点才查量闸（`MAX(day)` 早于 cutoff 才执行），执行 = 逐天 `DELETE FROM usage_requests WHERE day < cutoff`（60 天保留、本地午夜对齐完整天），**只清明细不碰 rollup**；时间闸持久化在 `sync_logs`（kind=`prune`），审计行复用 `imported` 列存删除行数。
 
 **防重复三道防线**：① file_mtime_ms 不变直接跳过文件；② seq 水位线，只折 `seq > last_seq`；③ 主键 `record_id` + `INSERT OR IGNORE` 幂等吸收。数据行写入、rollup upsert（§4.3）与水位推进在**同一事务**提交——崩溃不产生"数据已进、水位未进"的半截状态。实现细节：rollup upsert 以明细 INSERT 的 `changes() > 0` 为条件执行，保证病态场景（水位表丢失但明细仍在）下重折也不会双计。
@@ -366,7 +370,7 @@ CC 导入走同一个 upsert（`session_id` 传 `''`）；CC 历史迁移走覆�
 
 | 风险 | 缓解 |
 |---|---|
-| DSH 日志格式版本演进 | 读取时对未知事件类型跳过；`session.jsonl.zstd` 布局变化会在启动扫描时报错并跳过该会话，不影响整体 |
+| DSH 日志格式版本演进 | 读取时对未知事件类型跳过；**日志文件名 / 命名版本由目录发现而非写死**（`resolveSessionLog` 版本择新），改名或换版本自动重置字节偏移重折叠。⚠️ 反面教训：写死文件名时"找不到文件"既不报错也不留日志，采集会静默停摆——故 `sessionDirs > 0 && filesScanned === 0` 应视为异常信号并由调用方告警 |
 | 活跃会话写入中读取 | 只读 + 只折叠完整帧；水位推进天然处理 |
 | CC-switch 运行中占用 db | 只读连接；WAL 下读不阻塞 |
 | 删除会话日志 | 已折叠数据保留在库里（历史不因删日志消失）；被删会话的水位行顺手清掉 |
