@@ -1,0 +1,365 @@
+# DSH 会话日志折叠设计（日志版本识别 · 内容键去重 · 失效可见）
+
+> 状态：已落地（`lib/util/fold.js` 重写；`lib/util/store.js` 加 `pending` 列与 `maxCreatedAt`；
+> `lib/index.js` 下发健康统计；用量页"数据来源"卡加提示行）。
+>
+> 一句话结论：**不写死日志文件名与日志版本，只按 DSH 的 canonical 命名解析"版本号取最大"；
+> 事件身份改用内容键、去重不依赖 seq/文件/水位；读不出来必须告警，禁止静默显示 0。**
+
+---
+
+## 0. 结论摘要
+
+| 议题 | 结论 |
+|---|---|
+| 日志文件名 | **不能写死**。命名是"日志版本"制：v0 = `session.jsonl[.zstd]`，vN = `session.vN.jsonl[.zstd]`；读取规则与官方一致——**取版本号最大者** |
+| 旧文件要不要一起读 | 不要。迁移是"整段重编码进新版本"，**旧版本是历史快照且不会被删**；最高版本即全量。（另加低版本兜底：见 §5.5） |
+| 新文件里有迁移过来的历史，会不会重复计数 | 不会。身份 = **内容键**（`sessionId:time:turn.step`）+ 全读闸（该会话库内 `MAX(created_at)`）；两者都来自业务数据本身，与"读哪个文件"解耦 |
+| 水位（seq/offset）还有用吗 | 有，但降级为**纯读取游标**：丢了最坏重读一遍，不会重复、不会漏 |
+| 将来的 v4/v5 怎么办 | 版本号从文件名解析，**代码里没有任何版本白名单**；行 schema 真变了则由健康告警暴露（宁可报警也不要静默 0） |
+| 帧能不能按字节随便切 | 不能。zstd 帧是原子单位，读取必须"至少凑满一帧"，否则水位推进不了会死循环 |
+
+---
+
+## 1. 背景：DSH 会话日志与"日志版本"
+
+### 1.1 文件布局
+
+```
+$DSH_HOME/sessions/
+  --E-TokenMonitor--/                     ← 项目目录（cwd 编码）
+    session-94de6de1-.../                 ← 会话目录
+      session.jsonl.zstd                  ← v0 版本（老命名）
+      session.v3.jsonl.zstd               ← v3 版本（现行命名）
+      session.lock                        ← 独占写租约
+```
+
+canonical 命名（官方 `dsh-session-format/lib/index.js:464`）：
+
+```
+^session(?:\.v([1-9][0-9]*))?\.jsonl$      + 压缩后缀 .zstd
+```
+
+**v0 没有版本段；vN≥1 带 `.vN`。** 本构建 `SESSION_FORMAT_VERSION = 3`，迁移链 `v0→v1`、`v1→v2`、`v2→v3` 三条包齐全——即机器上完全可能出现 `session.v1.jsonl.zstd` / `session.v2.jsonl.zstd`。任何"写死 `session.jsonl.zstd`"或"写死 `session.v3.jsonl.zstd`"的做法都是错的。
+
+### 1.2 物理格式
+
+多帧 zstd 首尾相接；每帧解压出一段 JSONL。**首帧第一行是 header**（`type:"session"`，含 `id/cwd/createdAt/version/delegationDepth/agentPreset/isSeeded`），其余每行一个事件：
+
+```json
+{"type":"assistant/message","seq":27,"time":1787035657865,
+ "data":{"turn":2,"step":1,
+         "message":{"role":"assistant","content":[...],"source":{"provider":"deepseek-official","model":"deepseek-v4-flash"}},
+         "usage":{"inputTokens":12639,"outputTokens":174,"cacheReadTokens":0,"reasoningTokens":45},
+         "stream":[{"type":"chunk","time":1787035656338,"chunk":{"type":"block-start"}}]}}
+```
+
+只有 `assistant/message.data.usage` 带计费桶（input/output/cacheRead/cacheWrite）——**它是唯一的"产出行"事件**；`request/context` 只用于推路由（provider/model）。
+
+### 1.3 迁移语义（实测，不是推测）
+
+| 事实 | 证据 |
+|---|---|
+| **按需迁移**：打开哪个会话就迁移哪个，不是升级时批量转 | 本机 10 个会话目录：仅 2 个被迁移过（另有 1 个是升级后新建），其余 7 个至今仍是 v0 单文件；dsh CLI 无批量迁移入口；迁移只在 provider `open()` 内触发（`dsh-session-persistence-jsonl:2345 → 2380`） |
+| **整段重编码**，不是复制字节 | v3 从 seq 0 起包含会话最早的事件（同 id、同 createdAt、同 time）；同一会话 147493 行 → 28582 行 |
+| **旧文件保留不删** | 原子发布：写 `session.migration.<token>.tmp` → 校验字节/摘要 → rename（`:1950`、`:2071`）；源码里没有删除源版本的路径 |
+| 迁移后**新事件追加**到新文件 | v3 至今仍在增长 |
+| **seq 重新编号** | 同一条事件 v0 `seq=197` / v3 `seq=27`；v0 的 seq 有 12816 处断档（打包行），v3 的 seq == 行号且连续 |
+| 打包行被展开 | v0：147493 行里 83667 行是 `seq0` 打包行（一行含几十个 chunk 事件）；v3：0 个 |
+| 时间顺序严格保持 | 两代 time 逆序均为 **0** 次 |
+| 迁移**逐条保真** | v0 的 4667 条 usage 事件在 v3 中逐条、计数一致（时间/turn/step/provider/model/四个 token 桶全同）；v3 的 4859 条里 `(time,turn,step)` 零重复 |
+
+**官方读取规则**（`dsh-session-persistence-jsonl:3160` `resolveGenerationInDirectory`）：枚举目录内全部 canonical 版本文件，**取版本号最大者**（不是 mtime）。
+
+---
+
+## 2. 故障复盘：为什么"今天的用量是空的"
+
+### 2.1 直接原因
+
+折叠器写死 `session.jsonl.zstd`。昨天 16:14 起该机器上在用的会话被 DSH 迁移到 `session.v3.jsonl.zstd`，**新数据全部写在扫描范围之外**，页面上表现为"今天没有记录"。
+
+### 2.2 三层结构性原因
+
+1. **身份用"位置"**：`record_id = sessionId:seq`，而 seq 是"某个文件内的行号"。迁移重编号 → 身份失效。
+2. **游标与身份耦合**：`last_seq` 既当"读到哪"又当"是否已入库"。水位 `last_seq = 2351512` 大于 v3 的最大 seq `28581`，**就算只改文件名，也会被判定"全部已折叠"而整段跳过**。
+3. **失败是静默的**：文件不存在就 `continue`，格式不认识就产不出行，没有任何信号。
+
+### 2.3 量化损失
+
+水位停在 `2026-09-10 16:14:20`（`1789028060874`）。首次测量时 v3 里"水位之后"有 **192 条记录 / 8372 万 token**（9/10 96 条、9/11 90 条，全部 `deepseek-v4-flash`，其中缓存命中 8271 万）——不只是今天，**昨天下午 4 点之后也没入库**。数字随会话活动继续增长（修复验证时已到 254 条）。
+
+---
+
+## 3. 设计原则与不变量
+
+| | 原则 | 含义 |
+|---|---|---|
+| P1 | **位置与身份解耦** | 位置（文件 + offset + seq）只回答"从哪继续读"；身份（内容）只回答"要不要入库" |
+| P2 | **身份内容化** | `record_id` 由事件内容推导，跨版本稳定 |
+| P3 | **真值在明细表** | "已折叠到哪"以 `usage_requests` 为准，水位表只是性能缓存 |
+| P4 | **失效必须可见** | 认不出的日志版本/命名/记录格式 → 上报告警，禁止静默 0 |
+
+- **I1 身份稳定**：同一事件在任何日志版本、任何一次读取下都算出同一个 `record_id`。
+- **I2 原子提交**：明细 + rollup + 水位在同一事务提交。
+- **I3 水位只影响性能**：水位丢失/损坏 → 最多重读一遍，不会重复计数、不会漏。
+- **I4 游标单调**：同一文件内按 seq 递增消费，游标只前进；回退只能通过"从头整读"模式。
+- **I5 单文件权威**：一个会话在同一时刻以**版本号最大**的文件为唯一数据源。
+
+---
+
+## 4. 身份：内容键
+
+```js
+record_id = `${sessionId}:${event.time}:${data.turn}.${data.step}`
+// 异常行（缺 turn/step）退化为 `${sessionId}:${event.time}:s${seq}`
+```
+
+- **为什么不重复**：迁移逐条保真（§1.3 实测），所以"新文件里迁移过来的历史"与"库里已折叠的行"算出**同一个键** → `INSERT OR IGNORE` 直接忽略。
+- **唯一性**：v3 的 4859 条 usage 事件里 `(time,turn,step)` 零重复；`turn:step` 在会话内本就唯一。
+- **刻意不把 usage 数值写进键**：万一将来某次迁移"修正"了数值，宁可保留库里旧值，也不要因为数值变化而多插一条——**重复计数比数值陈旧危险得多**。
+- **不含 seq / 文件 / 日志版本**：这正是跨版本稳定的原因。
+
+---
+
+## 5. 位置：日志版本识别与读取层
+
+### 5.1 选文件
+
+```js
+const GENERATION_LOG_RE = /^session(?:\.v([1-9][0-9]*))?\.jsonl\.zstd$/;
+// 扫会话目录 → 解析版本号 → 取版本号最大者（与官方 resolveGenerationInDirectory 同规则）
+```
+
+代码里**不出现任何具体版本号**；`v9` 也会被正常选中并解析（已在合成用例里断言过，见 §13）。
+
+### 5.2 自适应窗口读 header
+
+header 实测永远是几百字节的**独立首帧**（本机 12 个文件：155~180 B），但这是"写者行为"而非契约。因此**不用固定窗口**：
+
+```
+窗口 4KB 起 → 切不出完整首帧就 ×4（4K→16K→…→4MB）→ 成功 / 到文件尾 / 到上限
+```
+
+固定窗口（旧实现 256KB）遇到"首帧被撑大"会**静默返回 null**，等于整个会话消失——同一类失效模式。
+
+### 5.3 帧不可切分：至少一帧 + pending
+
+v3 里**单帧最大到 10.9MB**（迁移整段写入），所以：
+
+- 每轮每文件软上限 `READ_ROUND_BYTES = 16MB`，但**停止点必须落在帧边界**；为凑满一帧可以超出软上限（单帧硬上限 64MB，超过则上报）。
+- 本轮没读到文件尾 → 水位写 `pending = 1`；下一轮**无视 mtime 继续读**。
+  （没有 `pending` 时，mtime 短路会把"因分批上限中途停下"误判成"文件没变化"，尾部永远读不到。）
+
+### 5.4 自愈
+
+| 症状 | 检测 | 动作 |
+|---|---|---|
+| 偏移超出文件长度 | `size < last_offset` | 回退从头整读 + 全读闸 |
+| 偏移落在帧中间（文件被原地重写/截断） | 该处切不出任何帧（oversize） | 回退从头整读 + 全读闸 |
+| 水位整行丢失 | 无水位记录 | 从头整读 + 全读闸（真值来自明细表） |
+| 文件尾只剩残缺帧 | 读到 EOF 仍无完整帧 | 不推进水位、不报错，等文件写完 |
+| 日志文件消失 | 路径不存在 | 清水位（已折叠数据保留） |
+
+### 5.5 低版本兜底（可选保险）
+
+官方语义下"回退旧版 DSH"会让这些会话**打不开**（不会回头往 v0 追加），所以"最高版本"始终权威。若将来出现"低版本文件 mtime 反而更新"的异常状态，可把该文件也纳入折叠——因为身份是内容键，**多读一个文件也不会重复计数**。
+
+---
+
+## 6. 两道闸与幂等
+
+| 闸 | 取值 | 何时用 | 作用 |
+|---|---|---|---|
+| **全读闸（时间闸）** | `SELECT MAX(created_at) FROM usage_requests WHERE session_id = ?` | **仅 `startOffset === 0`（从头整读）** | 把迁移过来的历史整体挡在门外。取自**明细表**而非水位表 → 水位丢了也照样挡得住 |
+| **文件内 seq 闸** | 水位 `last_seq` | 同文件续读 | 跳过本文件已扫过的行；纯省算力 |
+
+过渡期用**严格 `>`**：库里已有行的键是老格式 `sid:seq`，与新内容键不同，必须靠闸挡住，否则会重复插入。之后所有新行都是内容键，彻底幂等。
+
+**幂等的三处保证**：① 主键 + `INSERT OR IGNORE`；② `recordUsage` 返回 `changes===0` 时**不累加 rollup**（否则日聚合会翻倍）；③ 明细 + rollup + 水位同事务。
+
+---
+
+## 7. 一轮折叠的算法
+
+```
+foldSession(会话目录):
+  pick   = 目录内版本号最大的 canonical 文件            // §5.1
+  header = readHeader(pick, 自适应窗口)                 // 读不出 → 记 health.noHeader，跳过
+  wm     = store.getWatermark(header.id)
+  same   = wm && wm.log_path === pick
+
+  if (same && !wm.pending && mtime <= wm.file_mtime_ms) → 跳过（文件没变）
+
+  startOffset = same ? wm.last_offset : 0               // 换文件/首次 → 从头
+  if (startOffset > fileSize) startOffset = 0           // 自愈
+  gate    = startOffset === 0 ? store.maxCreatedAt(sessionId) : null   // 全读闸
+  seqGate = same && startOffset > 0 ? wm.last_seq : -1
+
+  batch = readFrameBatch(pick, startOffset, 16MB)       // 至少一帧 / 到软上限 / 到文件尾
+  if (batch.oversize && startOffset > 0)                // 自愈：偏移无效 → 从头重读
+      startOffset = 0; gate = maxCreatedAt(); seqGate = -1; batch = 重读
+
+  for frame of batch.frames:                            // 逐帧解压（失败即停，不越过它推进水位）
+    for line of frame:
+      event = JSON.parse(line)
+      switch event.type:
+        request/context  → route = {normalize(provider), model}
+        step/start       → timing[turn:step] = time
+        assistant/chunk  → timing 首块（仅 v0）
+        session/title    → title
+        assistant/message:
+            messageEvents++
+            if (seq <= seqGate) break                   // 同文件已扫
+            if (gate && !(time > gate)) break           // 迁移历史
+            gatedMessages++
+            if (!usage) { noUsageMessages++; break }
+            if (四个 token 桶全 0) { zeroUsageMessages++; break }   // 计费闸
+            provider/model = message.source ?? route
+            ttft = v3 ? stream[0].time - stepStart
+                      : (首块时间 - stepStart)
+            rows.push({ recordId: 内容键, ..., day: dayOf(time), createdAt: time })
+
+  pending = !atEnd && 无解压失败 && 无超大帧 && nextOffset > startOffset
+  transaction:
+      rows → recordUsage（INSERT OR IGNORE，未插入则不动 rollup）
+      putWatermark({ logPath: pick, lastSeq: maxSeq, lastOffset: nextOffset,
+                     fileMtimeMs, title, pending })
+```
+
+**关键顺序**：选文件 → 读 header 拿 id → 判模式 → 取闸 → 读+过滤 → 一个事务提交。任何一步失败都不推进水位。
+
+---
+
+## 8. 事件 → 行的口径（保持不变的部分）
+
+| 项 | 规则 |
+|---|---|
+| provider/model | 优先 `assistant/message.data.message.source`（该条消息真实路由）；回退 `request/context` 游标；再回退库内该会话最后一条 |
+| provider 归一 | `deepseek-official → deepseek` |
+| 计费闸 | 四个桶全 0 不入库 |
+| cost | `pricing.costNano(...)` 单入口（表优先 → pi-ai 兜底 → null） |
+| day | `dayOf(event.time)`（事件本地日期，不是折叠时刻） |
+| TTFT | v0：`step/start → 首个 assistant/chunk`；**v3：`step/start → assistant/message.data.stream[0].time`**（v3 不再有 chunk 事件；实测 4834/4834 条都有 stream） |
+| 打包行 | v0 的 `seq0` 行只取 seq0（保守低估）；v3 已无打包行 |
+
+---
+
+## 9. 新旧格式适配结论
+
+| 场景 | 是否适配 | 依据 |
+|---|---|---|
+| **老格式 v0**（`session.jsonl.zstd`） | ✅ | v0 就是"版本 0"；解析路径与原来完全一致（打包行、chunk 事件、TTFT 旧算法都保留） |
+| **现行 v3** | ✅ | 同一套解析；新增 TTFT 的 stream 分支；`assistant/message` 的 usage/source 字段未变 |
+| **中间日志版本 v1 / v2** | ✅ | 命名规则同族；取最大日志版本即拿到权威内容；不需要为每个日志版本写分支 |
+| **未来 v4 / v5** | ✅（结构上） | 版本号从文件名解析，无版本白名单；物理层仍是"多帧 zstd + JSONL"。**若行 schema 变了，会被健康告警抓到**（§10）而不是静默 0 |
+| **官方改命名规则** | ⚠️ 报警 | 目录里出现"像会话日志但不是 canonical 名"的文件 → `unrecognizedLogs` 告警（用 `session.jsonl.zstd.bak` 这类改名文件验证过，见 §13）。官方写入中的 `.tmp` 临时文件按预期存在，不算异常 |
+| **同一会话多版本并存** | ✅ | 只读最高版本；旧版本是历史快照且不删 |
+| **降级 DSH 后会话打不开** | ➖ 与官方一致 | 官方自身在该状态下也拒绝读取（README FAQ 已记录），插件不特判 |
+| **继承 / fork 会话**（`parentSession`、`delegationDepth>0`） | ⚠️ 待观察 | 本机 12 个日志全是 `delegationDepth:0`、无 parent。若将来出现，同一事件会在父子两个会话各计一次——列为已知边界，不静默忽略 |
+| **非 zstd 编码**（`.jsonl` 明文） | ❌ 不支持 | 物理层只实现 zstd 帧解析；该文件会走 `noHeader` 告警通道 |
+
+---
+
+## 10. 健康可见性（P4 的落地）
+
+`foldAllSessions()` 每轮产出 `health`：
+
+```js
+{
+  sessionsScanned, withHeader, withUsage,   // 会话数 / 有 header / 产出了用量行
+  generationCounts,                          // { "0": 7, "3": 3 } 选中的版本分布
+  pendingFiles,                              // 本轮没读完、下轮续读
+  noHeader: [],        // 读不出 header（含原因）
+  unreadable: [],      // 帧解压失败 / 单帧超限
+  unrecognizedLogs: [],// 目录里有疑似日志但不是 canonical 名
+  emptyUsage: [],      // 有"通过闸的新消息"却 0 条用量行（行 schema 可能变了）
+}
+```
+
+- **判定 `emptyUsage` 的锚点**：`gatedMessages > 0`（通过了闸、本应成为新行的消息数）。整段被全读闸挡住（换版本/水位丢失后重读）时 `gatedMessages = 0`，不会误报；只有几个 `permission/sandbox` 事件的空会话也不会误报。
+- **出口**：`foldOnce()` 存内存快照 → `GET /token-monitor/usage/sources` 下发 `foldHealth` → 用量页「数据来源」卡**表格下方**渲染一组两行提示（`lib/client.js` 的 `foldHealthWarning()` + `foldWarn`）：
+  - 第 1 行（红）：`检测到日志格式变化：` + 命中项拼接（如 `1 个日志文件名无法识别（DSH 可能改了命名规则）；2 个会话有事件但未产出用量（记录格式可能已变化）`）；
+  - 第 2 行（灰，固定安慰文案 `src.foldWarn.hint`）：`通常由 DSH 版本更新引起，插件会在后续版本适配；已记录的数据不受影响，可以继续使用。`——目的是让用户知道"不是插件崩了"。
+  - 间距对称：卡片是 flex column（`gap: 8px`）+ `padding: 12px`，这一组只给 `marginTop: 4px` → 到表格 12px、到卡片底边 12px；**无异常时不渲染该子节点，卡片样式与布局分毫不动**。横向 `padding: 0 8px` 与表格首列单元格（`padding: 4px 8px`）对齐。
+  - 同时写一条 `ctx.logger.warn` 审计。
+- **为什么必须做**：这次故障的根因不是"文件名变了"，而是**它静默返回了 0**。
+
+---
+
+## 11. 表结构与水位语义
+
+```sql
+CREATE TABLE fold_watermarks (
+  session_id TEXT PRIMARY KEY,
+  log_path TEXT NOT NULL,        -- 当前选中的版本文件（变即"换文件"，触发全读闸）
+  last_seq INTEGER NOT NULL,     -- 该文件内已扫到的最大 seq（仅同文件续读时用作 seq 闸）
+  file_mtime_ms INTEGER NOT NULL, -- mtime 短路（仅 pending=0 时生效）
+  title TEXT,
+  last_offset INTEGER NOT NULL DEFAULT 0,  -- 已消费到的帧边界（字节）
+  pending INTEGER NOT NULL DEFAULT 0,      -- 1 = 本轮没读完，下轮无视 mtime 继续
+  updated_at INTEGER NOT NULL
+);
+```
+
+- 旧库自动补列：`ALTER TABLE fold_watermarks ADD COLUMN pending INTEGER NOT NULL DEFAULT 0`（沿用 store.js 既有增量迁移写法）。
+- 新增 `store.maxCreatedAt(sessionId)`：全读闸的唯一来源，**不引入新表**。
+- 水位语义明确为"读取游标"：**丢一行、清一表都不会造成重复计数或漏数**。
+
+---
+
+## 12. 性能与阻塞
+
+| 场景 | 读取量 | 说明 |
+|---|---|---|
+| 常规增量（指标路径） | 文件尾新增的几 KB~几百 KB | 每 5 分钟一轮（`FOLD_INTERVAL_MS`），绝大多数文件 mtime 未变直接短路 |
+| 会话首次出现 / 换版本 | 整份（v3 实测 11.7MB；老 v0 可达 40MB） | 每轮上限 16MB，未读完标 `pending` 下轮续；**同步解压不在请求路径上**（微任务），分批避免长时间占住事件循环 |
+| 单帧 10.9MB | 该帧必须整体读入 | 帧不可切分；硬上限 64MB，超过则上报并停下（不推进水位，靠 mtime 短路避免每轮重复失败） |
+
+写入量始终只与"新增事件数"有关：换版本那次是"整份解压一遍、只插入尾部新增"（历史行连 INSERT 都不发）。
+
+---
+
+## 13. 验收记录（2026-09-11 实测）
+
+验收通过一次性脚本完成，**脚本跑完即删、不留在仓库**；下面是方法与结果。
+
+**① 合成用例**（自造 zstd 帧，不依赖真机日志）：构造同目录 v0+v2+v3、只有一个 v0 的会话、未来版本 v9、以及改名文件 `session.jsonl.zstd.bak`。结果 8 项断言全绿：
+
+- v0+v2+v3 只读版本号最大的 v3，且 v0 里的历史不重复计数；
+- 只有 v0 的会话正常入库（老格式兼容）；
+- **版本分布 `{0:1, 3:1, 9:1}` —— 未来版本 v9 也被识别并解析**（代码里没有版本白名单）；
+- 改名/遗留文件进 `unrecognizedLogs` 告警；
+- 内容键格式正确；TTFT 取自 `message.data.stream` 首块。
+
+**② 回放对账**（把真实库复制到临时目录，绝不碰真实数据）：
+
+| 检查 | 结果 |
+|---|---|
+| 复制库增量折叠 | 7506 → **7760 行（+254，即被漏掉的那批）**；token 33.73 亿 → 34.75 亿；TTFT 非空 7503 → 7757 |
+| 幂等 | 复折 `imported = 0` |
+| 水位丢失 | 删水位行后复折 `imported = 0`，总量不变 |
+| 与干净库全量折叠对账 | 38 个 `(day, session, provider, model)` 分组**逐组一致**，库总量完全相同 |
+| 健康统计 | `noHeader / unreadable / unrecognizedLogs / emptyUsage` 全为 0 |
+| 运行现状 | `版本={"0":7,"3":3}`、`header=10/10`；9/11 当天 204 条（4628 万 token）、9/10 补到 160 条（1.16 亿） |
+
+**③ 线上确认**：重启 `dsh web` 后 `GET /token-monitor/usage/sources` 已带 `foldHealth`，且四项异常数组全空、`generationCounts` 为 `{0:7, 3:3}`——即"旧版本日志 + 新版本日志"混合状态下都正常读取。
+
+## 14. 演进路线
+
+- **A（现状，已落地）**：自解析文件。零依赖、可离线、老版本 DSH 同样可用；代价是仍依赖"物理层 zstd + JSONL 行"这一非公开契约——行 schema 变化靠 §10 告警发现。
+- **B（备选，需先验证）**：改用官方 `sessionPersistence.list()/open(id,'read')/read(offset)`（`dsh-session-persistence/lib/types/index.d.ts`）拿**官方解码后的 SessionEvent**，日志版本与迁移全由官方处理。两个待验证点：① `open()` 会**触发官方迁移落盘**（后台批量把老会话重写成新版本）；② 旧版 DSH 未必有该服务，仍需保留 A 作为回退。
+
+---
+
+## 15. 术语
+
+| 术语 | 含义 |
+|---|---|
+| 日志版本（generation） | 日志文件名里的版本段：v0 = `session.jsonl`（无版本段），vN = `session.vN.jsonl` |
+| 迁移 | DSH 打开会话时把历史整段重编码进新版本文件（旧文件保留） |
+| 内容键 | `sessionId:time:turn.step`，跨版本稳定的事件身份 |
+| 全读闸 / 时间闸 | 从头整读时使用的 `MAX(created_at)`，用来挡住迁移过来的历史 |
+| seq 闸 | 同一文件内用 `last_seq` 跳过已扫过的行 |
+| pending | 水位标记：本轮没读到文件尾，下轮必须继续 |
+| 帧 | zstd 压缩帧，不可切分的解析单位 |
