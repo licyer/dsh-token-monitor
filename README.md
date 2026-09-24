@@ -5,7 +5,7 @@
 <a href="https://www.npmjs.com/package/dsh-token-monitor" target="_blank" rel="noopener noreferrer"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-token-monitor.svg?color=CB3837"></a>
 [![release](https://img.shields.io/github/v/release/licyer/dsh-token-monitor.svg?color=24292f)](https://github.com/licyer/dsh-token-monitor/releases)
 [![license](https://img.shields.io/npm/l/dsh-token-monitor.svg?color=lightgrey)](LICENSE)
-[![dsh](https://img.shields.io/badge/dsh-0.1.5--rc.1-3964fe)](https://github.com/deepseek-ai/deepseek-harness)
+[![dsh](https://img.shields.io/badge/dsh-0.1.7--alpha.2-3964fe)](https://github.com/deepseek-ai/deepseek-harness)
 [![node](https://img.shields.io/badge/node-22.5.0%2B-339933)](https://nodejs.org)
 
 [安装](#安装) · [功能](#功能) · [插件配置](#插件配置) · [供应商适配](#供应商适配) · [常见问题](#常见问题) · [设计](#设计) · [开发](#开发)
@@ -23,7 +23,9 @@ DeepSeek Harness（DSH）Web 界面的大模型**余量与用量监控**插件�
 > [!NOTE]
 > 需要 **Node.js ≥ 22.5.0**（依赖内置 `node:sqlite`）。仅支持 DSH Web 端（`platform: web`）。
 >
-> 实测环境：DSH **0.1.5-rc.1**（保留对 0.1.1 的旧接口兼容回退；**会话数据不可跨版本回退**——高版本写过的会话低版本无法打开）。
+> 适配版本：**DSH 0.1.7-alpha.2**（当前实测环境；从 0.1.1 起的旧版本也一直保留接口兼容回退，直接装即可）。详见[DSH 官方接口触点清单](docs/DSH官方接口触点清单.md)。
+>
+> 注意：**会话数据不可跨版本回退**——高版本 DSH 写过的会话，低版本打不开（与插件无关，见常见问题）。
 
 ### 从 npm（推荐）
 
@@ -44,7 +46,7 @@ dsh plugin --profile web add github:licyer/dsh-token-monitor
 | 能力 | 说明 |
 | --- | --- |
 | 余量徽标 | 会话头部显示当前模型供应商余量（`k3 · 5h 剩 82%`），点击弹详情层 |
-| 用量页签 | 与"对话 / 轨迹"并列：token 用量、估算费用、趋势、排行、请求明细 |
+| 用量页签 | 与"对话 / 轨迹"并列：token 用量、估算费用、趋势、热力图、排行、请求明细 |
 | 模型定价 | 内置 DeepSeek 官方价（含高峰倍率与已公布即将生效档），用量页底部可自行维护 / 覆盖；表里没有的模型用 pi-ai 刊例价兜底 |
 | 自动采集 | 自动采集 DSH 会话日志，后台定时 + 手动刷新 |
 | 历史导入 | cc-switch 记录每 5 分钟自动同步；也支持手动导入与 SQL 文件导入，重复导入不产生重复数据 |
@@ -64,25 +66,27 @@ dsh plugin --profile web add github:licyer/dsh-token-monitor
 
 ### 用量页签
 
-顶部筛选（客户端 / 供应商 / 模型级联，供应商按厂商归并）+ 时间窗（当天 / 昨天 / 7 / 30 / 90 天 / 全部），统计卡显示总消耗、请求次数、预估费用、平均 TTFT、新增输入、缓存命中、输出、缓存命中率。
+顶部筛选（客户端 / 供应商 / 模型级联，供应商按厂商归并）+ 时间窗（当天 / 昨天 / 7 / 30 天 / 全部），统计卡显示总消耗、请求次数、预估费用、平均 TTFT、新增输入、缓存命中、输出、缓存命中率。
 
-- **使用趋势**：渐变面积图，左轴 token 构成，右轴切换预估费用 / 请求次数；当天为分钟级刻度（2~60 分钟自适应 ≥12 桶，补桶不跨天），悬浮提示显示桶区间（如 `15:00~15:30`）
+**使用趋势**与**消耗热力图**常驻显示；热力图下方的页签在**供应商统计 / 使用排行 / 请求记录**之间切换，底部固定为「数据来源」与「模型定价」。
+
+- **使用趋势**：渐变面积图，左轴 token 构成，右轴切换预估费用 / 请求次数；粒度随时长自适应（当天按分钟、多天按天、长跨度自动并成周 / 月桶），悬浮提示显示桶区间（如 `15:00~15:30`）
 
 ![使用趋势](docs/images/usage-trend.png)
-
-- **供应商消耗统计**：X 轴供应商、柱内按模型堆叠，右柱费用 / 次数可切换
-
-![供应商消耗统计](docs/images/provider-bars.png)
 
 - **年度消耗热力图**：GitHub 日历风，近 12 个整月，色深 = 当日 token，首尾按周补齐
 
 ![年度消耗热力图](docs/images/heatmap.png)
 
-- **使用排行**：模型 / 供应商 / 客户端三维度聚合，默认按总消耗降序
+- **供应商统计**（默认页签）：X 轴供应商、柱内按模型堆叠，右柱费用 / 次数可切换
+
+![供应商消耗统计](docs/images/provider-bars.png)
+
+- **使用排行**（页签）：模型 / 供应商 / 客户端三维度聚合，默认按总消耗降序
 
 ![使用排行](docs/images/usage-rank.png)
 
-- **请求记录**：分页明细表（时间倒序），页码跳转、每页条数可调（10/20/50/100）
+- **请求记录**（页签）：分页明细表（时间倒序），页码跳转、每页条数可调（10/20/50/100）
 
 ![请求记录](docs/images/usage-records.png)
 
