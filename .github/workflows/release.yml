@@ -42,16 +42,14 @@ jobs:
             exit 1
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "name=dsh-token-monitor-$TAG" >> "$GITHUB_OUTPUT"
 
-      - name: 创建或更新 Release（正文为一句默认，待人工替换）
+      - name: 创建或更新 Release（标题=tag，正文为一句默认，待人工替换）
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ steps.meta.outputs.tag }}"
-          NAME="${{ steps.meta.outputs.name }}"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" --title "$NAME" --notes "发布 $TAG。"
+            gh release edit "$TAG" --title "$TAG" --notes "发布 $TAG。"
           else
-            gh release create "$TAG" --title "$NAME" --notes "发布 $TAG。" --latest
+            gh release create "$TAG" --title "$TAG" --notes "发布 $TAG。" --latest
           fi
