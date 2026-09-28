@@ -3,9 +3,8 @@
 # 设计约束（与 publish.yml 配套，2026-09-28 定稿）：
 # - GitHub Release 可删可改，所以允许监听 tag 推送自动创建；
 #   npm 发布不可撤回，仍只能走 publish.yml 手动触发（输入 OK），两者独立。
-# - Release 正文只做占位：有 docs/releases/<tag>.md 就用它（tag 内那版优先，
-#   没有再回退默认分支当前版本），否则写一句默认文案——反正发完会人工替换。
-#   刻意不用 --generate-notes：那会生成一大段 "What's Changed" 噪音，还得删。
+# - 正文**固定一句默认**（"发布 vX.Y.Z。"）当占位：发完在网页上人工替换即可。
+#   刻意不读任何日志文件、也不用 --generate-notes（那会生成一堆 What's Changed 噪音）。
 # - 幂等：Release 已存在时改为更新（gh release edit），重跑安全。
 # - 手动触发（填 tag 名）用于给历史 tag 补建 Release。
 # - 一致性守卫：tag 必须与 package.json 的 version 一致，不一致直接失败。
@@ -29,10 +28,10 @@ jobs:
   release:
     runs-on: ubuntu-latest
     steps:
-      # 默认检出（默认分支，浅克隆）；tag 单独取，避免"检出 tag 导致日志文件取不到"
+      # 默认检出即可：只用来读 tag 与 package.json，日志文件不参与
       - uses: actions/checkout@v5
 
-      - name: 解析 tag、校验版本、准备正文
+      - name: 解析 tag 并校验与 package.json 版本一致
         id: meta
         run: |
           TAG="${{ inputs.tag || github.ref_name }}"
@@ -42,31 +41,17 @@ jobs:
             echo "::error::tag $TAG 与 package.json 版本 v$PKG_VERSION 不一致"
             exit 1
           fi
-
-          NOTES="docs/releases/$TAG.md"
-          OUT="$RUNNER_TEMP/notes.md"
-          if git cat-file -e "$TAG:$NOTES" 2>/dev/null; then
-            git show "$TAG:$NOTES" > "$OUT"
-            echo "正文来源：tag $TAG 内 $NOTES"
-          elif [ -f "$NOTES" ]; then
-            cp "$NOTES" "$OUT"
-            echo "正文来源：默认分支 $NOTES"
-          else
-            echo "发布 $TAG。" > "$OUT"
-            echo "正文来源：默认一句话（待人工替换）"
-          fi
-
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
           echo "name=dsh-token-monitor-$TAG" >> "$GITHUB_OUTPUT"
-          echo "file=$OUT" >> "$GITHUB_OUTPUT"
 
-      - name: 创建或更新 Release
+      - name: 创建或更新 Release（正文为一句默认，待人工替换）
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ steps.meta.outputs.tag }}"
+          NAME="${{ steps.meta.outputs.name }}"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" --title "${{ steps.meta.outputs.name }}" --notes-file "${{ steps.meta.outputs.file }}"
+            gh release edit "$TAG" --title "$NAME" --notes "发布 $TAG。"
           else
-            gh release create "$TAG" --title "${{ steps.meta.outputs.name }}" --notes-file "${{ steps.meta.outputs.file }}" --latest
+            gh release create "$TAG" --title "$NAME" --notes "发布 $TAG。" --latest
           fi
