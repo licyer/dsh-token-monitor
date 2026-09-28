@@ -1,0 +1,83 @@
+# 推 tag 自动建 GitHub Release。
+#
+# 设计约束（与 publish.yml 配套，2026-09-28 定稿）：
+# - GitHub Release 可删可改，所以允许监听 tag 推送自动创建；
+#   npm 发布不可撤回，仍只能走 publish.yml 手动触发（输入 OK），两者独立。
+# - Release 正文来源优先级：
+#     1) docs/releases/<tag>.md（如 docs/releases/v1.0.11.md）——手写日志放这里，随版本提交；
+#     2) 没有该文件时用 GitHub 自动生成（提交列表）。
+# - 幂等：Release 已存在时不报错，改为更新标题/正文（gh release edit），重跑安全。
+# - 手动触发（Actions 页面选此工作流，填 tag 名）用于给历史 tag 补建 Release。
+# - 一致性守卫：tag 必须与 package.json 的 version 一致，不一致直接失败。
+
+name: Create Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "要为哪个 tag 建 Release（如 v1.0.11）"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+
+      - name: 解析 tag 并校验与 package.json 版本一致
+        id: meta
+        run: |
+          TAG="${{ inputs.tag || github.ref_name }}"
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$TAG" != "v$PKG_VERSION" ]; then
+            echo "::error::tag $TAG 与 package.json 版本 v$PKG_VERSION 不一致"
+            exit 1
+          fi
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "name=dsh-token-monitor-$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: 定位手写日志
+        id: notes
+        run: |
+          FILE="docs/releases/${{ steps.meta.outputs.tag }}.md"
+          if [ -f "$FILE" ]; then
+            echo "file=$FILE" >> "$GITHUB_OUTPUT"
+          else
+            echo "file=" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 创建或更新 Release（手写正文）
+        if: steps.notes.outputs.file != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.meta.outputs.tag }}"
+          NAME="${{ steps.meta.outputs.name }}"
+          FILE="${{ steps.notes.outputs.file }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$NAME" --notes-file "$FILE"
+          else
+            gh release create "$TAG" --title "$NAME" --notes-file "$FILE" --latest
+          fi
+
+      - name: 创建或更新 Release（自动生成正文）
+        if: steps.notes.outputs.file == ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.meta.outputs.tag }}"
+          NAME="${{ steps.meta.outputs.name }}"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --title "$NAME"
+          else
+            gh release create "$TAG" --title "$NAME" --generate-notes --latest
+          fi
