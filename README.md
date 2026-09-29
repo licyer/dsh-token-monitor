@@ -5,7 +5,7 @@
 <a href="https://www.npmjs.com/package/dsh-token-monitor" target="_blank" rel="noopener noreferrer"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-token-monitor.svg?color=CB3837"></a>
 [![release](https://img.shields.io/github/v/release/licyer/dsh-token-monitor.svg?color=24292f)](https://github.com/licyer/dsh-token-monitor/releases)
 [![license](https://img.shields.io/npm/l/dsh-token-monitor.svg?color=lightgrey)](LICENSE)
-[![dsh](https://img.shields.io/badge/dsh-0.1.7--alpha.2-3964fe)](https://github.com/deepseek-ai/deepseek-harness)
+[![dsh](https://img.shields.io/badge/dsh-0.2.0--rc.1-3964fe)](https://github.com/deepseek-ai/deepseek-harness)
 [![node](https://img.shields.io/badge/node-22.5.0%2B-339933)](https://nodejs.org)
 
 [安装](#安装) · [功能](#功能) · [插件配置](#插件配置) · [供应商适配](#供应商适配) · [常见问题](#常见问题) · [设计](#设计) · [开发](#开发)
@@ -21,9 +21,9 @@ DeepSeek Harness（DSH）Web 界面的大模型**余量与用量监控**插件�
 ## 安装
 
 > [!NOTE]
-> 需要 **Node.js ≥ 22.5.0**（依赖内置 `node:sqlite`）。仅支持 DSH Web 端（`platform: web`）。
+> 需要 **Node.js ≥ 22.5.0**（依赖内置 `node:sqlite`）。DSH **桌面版与 Web 端**都可安装（客户端声明为 `platform: web`，两端共用同一份客户端产物）。
 >
-> 适配版本：**DSH 0.1.7-alpha.2**（当前实测环境；从 0.1.1 起的旧版本也一直保留接口兼容回退，直接装即可）。详见[DSH 官方接口触点清单](docs/DSH官方接口触点清单.md)。
+> 适配版本：**DSH 0.2.0-rc.1**（当前实测环境；从 0.1.1 起的旧版本也一直保留接口兼容回退，直接装即可）。详见[DSH 官方接口触点清单](docs/DSH官方接口触点清单.md)。
 >
 > 注意：**会话数据不可跨版本回退**——高版本 DSH 写过的会话，低版本打不开（与插件无关，见常见问题）。
 
@@ -45,7 +45,7 @@ dsh plugin --profile web add github:licyer/dsh-token-monitor
 
 | 能力 | 说明 |
 | --- | --- |
-| 余量徽标 | 会话头部显示当前模型供应商余量（`k3 · 5h 剩 82%`），点击弹详情层 |
+| 余量徽标 | 会话头部显示当前模型供应商余量（如 `5h 剩 82%`），点击弹详情层 |
 | 用量页签 | 与"对话 / 轨迹"并列：token 用量、估算费用、趋势、热力图、排行、请求明细 |
 | 模型定价 | 内置 DeepSeek 官方价（含高峰倍率与已公布即将生效档），用量页底部可自行维护 / 覆盖；表里没有的模型用 pi-ai 刊例价兜底 |
 | 自动采集 | 自动采集 DSH 会话日志，后台定时 + 手动刷新 |
@@ -200,8 +200,8 @@ git clone https://github.com/licyer/dsh-token-monitor.git
 dsh plugin --profile web add link:/path/to/dsh-token-monitor   # 本地路径挂载
 ```
 
-- 改前端（`lib/client.js`）：HMR 热替换，刷新即生效
-- 改服务端（`lib/index.js` / `lib/util/`）：需重启 `dsh web` 进程
+- 改前端（`lib/client.js`）：桌面版 / Web 端**刷新页面**即生效；若同时跑着 `pnpm run dev:web`（重建客户端 bundle），则由 HMR 自动热替换、无需刷新
+- 改服务端（`lib/index.js` / `lib/util/`）：**必须重启**对应进程（`dsh web` / 桌面版应用）
 
 ## 许可证
 

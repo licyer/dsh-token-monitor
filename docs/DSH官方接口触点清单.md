@@ -6,8 +6,9 @@
 >
 > 兼容策略约定：凡存在新旧两代调用的点，一律 **新版优先，新版不可用（未升级）再回退旧版**；
 > 两代共用同一机制的（如 useProjection 会话投影）无分支。
-> 当前基线：实测环境 DSH **0.1.7-rc.2**（0.1.7 稳定线；徽标/弹层/投影读取已实测通过）；上一基线 0.1.7-alpha.2、0.1.5-rc.1、0.1.2-rc.1（"新版/旧版"的分界仍以 0.1.2 计）。≤0.1.1 分支为按旧契约写的回退路径（当前环境无法回归）。
+> 当前基线：实测环境 DSH **0.2.0-rc.1**（桌面版与 CLI 同为 0.2.0-rc.1）——本轮已就 A/B/C/D/E/F/G 全表逐项复核通过：槽名 ×3、`inject` 四服务、`sessions`/`remote` 双路、`modelSelection` 投影、服务端四服务、主题令牌（含 `--dsw-menu-backdrop-filter`）、bundle 协议、会话日志 `SESSION_FORMAT_VERSION = 4` 均未变；新增触点见下表内 **0.2** 标注。上一基线 0.1.7-rc.2、0.1.7-alpha.2、0.1.5-rc.1、0.1.2-rc.1（"新版/旧版"的分界仍以 0.1.2 计）。≤0.1.1 分支为按旧契约写的回退路径（当前环境无法回归）。
 > 注：核对 `modelSelection` 这类投影时——键名是**数据帧携带**的运行时字符串，客户端侧源码里搜不到字面量不代表缺失（rc.2 的 client.js 就搜不到，实测正常），必须以运行实测为准。
+> 注：0.2 起 `@deepseek-ai/dsh-desktop-runtime` **不再单独发布**（桌面端包结构变化）；本插件未直接依赖它，无需处理。
 
 ---
 
@@ -78,6 +79,7 @@ _refresh() { for (const name of Object.keys(this.inject)) { if (!this._store[nam
 | 当前会话标题 | TokenMonitorEntry 顶部 `titleProj` / `sessionTitle` | 弹层只读标题行 | **新版优先**：`useProjection("title")`（会话投影，string/null）；新版无该投影 → 回退 `useSessions` 会话列表标题 → 会话 id | title 投影 key/值；useSessions 快照形状（`ids/byId/displayTitle`） |
 | 本会话累计用量 | `useProjection("tokenUsage")` → UsageSection | 弹层四桶瓦片 | 两版同一投影机制，无分支 | tokenUsage 投影注册与字段（uncachedInputTokens/outputTokens/cacheReadTokens/cacheWriteTokens） |
 | provider 路由 id → 抓取 id | `PROVIDER_ALIASES`（client.js 顶部，`"deepseek-official": "deepseek"`） | 模型 provider 名 → overview provider id | DSH 路由 id 语义（当前 deepseek 官方路由名为 deepseek-official） | llm provider 路由命名变化 |
+| **DeepSeek 账号渠道路由**（0.2 复核） | `dsh-llm-deepseek-account`（`const PROVIDER = "deepseek-account"`）、`registerDeepSeekProvider` → `ctx.llm.registerAdapter` | 桌面版"账号登录"渠道；它的余额卡片与原生充值入口 | **路由无条件注册**：`dsh-llm-deepseek-account` 在 `dsh-base/cordis.patch.yml` 里无任何条件，`registerAdapter` 也无条件 → **`llm.listProviders()` 在任何宿主（含纯 web）都含 `deepseek-account`**，官方模型选择器因此在 web 端也列它（未登录时 `discoverModels` 捕获 `ACCOUNT_SIGN_IN_REQUIRED` 返回 `[]`，路由仍在）。本插件按"宿主是否 Electron"屏蔽 web 端展示（`lib/index.js` `isDesktopHost`） | 路由 id、是否改为条件注册、`resolveAuth` 的凭证来源 |
 
 ## E. 官方 UI DOM / CSS 依赖（脆弱点）
 
@@ -87,6 +89,7 @@ _refresh() { for (const name of Object.keys(this.inject)) { if (!this._store[nam
 | 设计令牌 | `var(--dsw-alias-*)`、`var(--dsw-specific-menu)` 等（全文件样式） | 外观随 DSH 主题 | 官方 CSS 变量 | 令牌名增减 |
 | 深色兜底 | `isDark()` 三级判定：theme 服务 → `document.body.hasAttribute("data-ds-dark-theme")` → body 背景亮度 | theme 服务缺失/未就绪时判深色 | 自家兜底。**暗色标记是宿主权威做法**：设计令牌的暗色分支就写在 `body[data-ds-dark-theme]{…}`（`dsh-client-ui-theme` 注入的 CSS），比"量背景亮度"可靠（新版布局里 body 背景可能仍是浅色/透明） | 属性名是否变化 |
 | 热力图格子间隙色 | `heatGapColor(el)`（优先 `cssVar("--dsw-alias-bg-base")`，兜底 `computedBg()`） | 日历底层日格子的填充/描边 = 容器底色（盖住默认浅色透出的线条） | **必须渲染期同步取**：早期实现用"挂载后 setBg 实测 + state"，切主题时 CSS 变量同帧已变而 state 晚一帧 → 间隙闪一下。改成同步读令牌后消失 | — |
+| **渲染环境判别**（0.2 复核） | `"dshDesktop" in globalThis`（官方客户端插件通用写法）、`globalThis.dshPlatform` | 官方用它判断"是否在**桌面渲染进程**里"，我们用它解释 web 端的账号 UI 为何不显示 | `dshDesktop` / `dshPlatform` 都由桌面渲染进程的 preload 注入；纯浏览器里没有。官方 `dsh-client-ui-settings-account` 的 `apply()` 首行就是 `if (!("dshDesktop" in globalThis)) return;`（整个账号 UI 只在桌面渲染器注册）；同类用法另有 `dsh-client-shortcuts`（`window.dshDesktop?.shortcuts`）、`dsh-client-ui-settings-general`（`globalThis.dshDesktop` 作更新源载体）、`dsh-client-ui-chat`（桌面默认 `transcriptView: standard`）、`dsh-client-product-analytics`。**注意宿主与渲染是两个面**：桌面宿主 + 浏览器打开同一地址时，宿主是 Electron（本插件宿主侧判据为真）而渲染器没有 `dshDesktop`（官方 UI 不显示）——两者结论会相反 | 注入名是否变化；官方是否新增其它环境判据 |
 
 ## F. 服务端 Host 服务
 
@@ -96,6 +99,8 @@ _refresh() { for (const name of Object.keys(this.inject)) { if (!this._store[nam
 | LAN 信任名单 | `ctx.get("webRuntime").trustedHosts`（lib/index.js 的 `pluginTrustedHosts`） | 路由来源校验：允许的 Host = loopback ∪ trustedHosts；非只读方法再校验 Origin。老版本无此服务且绑 0.0.0.0 时降级为"只信 IP 字面量" | 0.1.5 由 `@deepseek-ai/dsh-web-app`（web-runtime 行）`provide("webRuntime", { lanAddresses, trustedHosts })`；仅 LAN 模式（`--host 0.0.0.0`）下非空 | 服务名/字段；宿主是否改为自己校验 |
 | LLM 提供方列表 | `ctx.get("llm").listProviders()`（overview()） | 徽标/弹层“用户配置并激活的提供方”列表 | 0.1.2 实测正常 | 服务名/方法/返回值（id 路由名） |
 | 凭证解析 | `ctx.get("credentials").resolve(ref)`（lib/util/fetch-quotas.js `resolveCredential`） | 各家 API key（ref = `DEEPSEEK_API_KEY` 等） | 0.1.2 文件式 `.credentials.yaml` 实测可读；0.1.1 兼容 | resolve 签名、ref 命名、托管文件结构 |
+| **账号凭证记录**（0.2 复核） | `ctx.get("credentials").readRecord("deepseek-account-platform/default")` → `payload.token`（lib/util/fetch-quotas.js `readAccountGrantToken`） | 桌面版账号渠道读 grant token（调 `platform.deepseek.com` 平台接口取余额/累计消费） | 记录由 `dsh-deepseek-account-platform` 写入 `~/.dsh/.credentials.yaml` 的 `records`；**该文件由所有 profile 共享**，所以 web 宿主也能读到桌面版登录留下的 grant。`dsh-base/cordis.patch.yml` 里该插件带 `desktopPlatform: !!js "ctx.get('profileContext')?.name === 'desktop' && ['darwin','win32'].includes(process.platform) ? process.platform : null"`——该配置**只影响请求头里的平台标记**（`platformClientHeaders`），**不是功能闸门** | 记录 key、payload 形状、`desktopPlatform` 的真实语义 |
+| **账号服务**（0.2 复核） | `ctx.get("deepseekAccount")`（服务名由 `dsh-deepseek-account` 的 `super(ctx, "deepseekAccount")` 定义；实现类由 `dsh-deepseek-account-platform` 提供） | 账号登录状态/资料/钱包；`dsh-api-account-controller` 以 `static inject = ["deepseekAccount", "agents"]` **硬注入**它 | `dsh-base` 含 `deepseek-account-platform` 与 `llm-deepseek-account`，**不含**账号控制器（后者由 `dsh-web-app` 的 bundle 声明）。硬注入意味着该服务缺失时账号控制器**整个不激活**（见文首铁律） | 服务名、实现类、注入面 |
 
 ## G. DSH 数据 / 文件面
 
@@ -104,7 +109,7 @@ _refresh() { for (const name of Object.keys(this.inject)) { if (!this._store[nam
 | DSH 家目录 | `dshHome = $DSH_HOME \|\| ~/.dsh`（index.js、store.js） | 定位会话日志/配置/凭证 | 通用 | 路径约定 |
 | 会话日志目录/文件 | 会话目录 `~/.dsh/sessions/<project>/<sessionDir>/` 下的日志；规范命名 `session.jsonl.zstd`（版本 0）或 `session.vN.jsonl.zstd`（N≥1，0.1.7 当前写 **v4**）（fold.js `chooseGenerationLog` / `parseGeneration`） | 用量折叠数据源（读取游标 + 内容键幂等） | **取代际（版本号）最大者**，与官方 `resolveGenerationInDirectory` 同规则；代码里不写死版本号。0.1.5 起 DSH 引入日志版本，旧版日志仍为 v0 | 命名契约（官方 `parseSessionFormatLogFilename`）、当前写入版本 `SESSION_FORMAT_VERSION`、压缩后缀 |
 | 日志版本与迁移语义 | `SESSION_FORMAT_VERSION = 4`（`dsh-session`，0.1.7；0.1.5 为 3）、`dsh-session-format-v3-to-v4`、`resolveGenerationInDirectory` / `publishStoredMigration` | 解释"为什么同一个会话会有多个日志文件" | **按需迁移**：打开哪个会话才迁移哪个（不是升级时批量转）；迁移把整段历史**重新编码**进新版本文件（内容保真、`seq` 重编号、打包行展开），旧文件保留不删；迁移期间写 `session.migration.<token>.tmp` 再改名（临时名不是规范名，天然不会被误读）。**v3→v4 的迁移不触碰计费字段**（全文无 `usage`/`inputTokens` 等 → 折叠口径不变） | 版本号常量、是否改为删除旧文件、临时命名规则 |
-| 会话日志事件行格式 | fold.js 内 `switch (event.type)`：`request/context`（低频 route 游标）、`step/start`、`assistant/chunk`（**仅 v0**）、`session/title`、`assistant/message{usage:{inputTokens,outputTokens,cacheReadTokens,cacheWriteTokens}, message:{source:{provider,model}}, stream:[{time,chunk}]}`；行含 `type/seq/time/data` | 折叠 provider/model/四桶/首 token 时延 | 消息自带 `message.source` 为真源（曾误记 opencode-go 教训）。**v3 起 chunk 流并入 `assistant/message.data.stream`**（不再有 `assistant/chunk` 事件）→ TTFT 取 `stream[0].time`；`seq` 在 v3 内为行号。**0.1.7 新增 `assistant/attempt`**：官方只在**没有 usage** 时才写它（`live.usage === undefined ? {} : { usage }` 走 `assistant/message`，否则走 `assistant/attempt`）→ 我们只认 `assistant/message`，**不漏计也不重复计**；若将来 attempt 也带 usage 需补。**事件面单向向前**：新版新增事件若不标 `ignorable`（如 0.1.2 的 `model/selection`），旧版会整会话拒读（`resume failed … SessionFormatUnsupportedError`），会话数据不可跨版本回退 | 事件 type/字段变化、usage 口径、source 语义、stream 结构、新增事件是否带 `ignorable` |
+| 会话日志事件行格式 | fold.js 内 `switch (event.type)`：`request/context`（低频 route 游标）、`step/start`、`assistant/chunk`（**仅 v0**）、`session/title`、`assistant/message{usage:{inputTokens,outputTokens,cacheReadTokens,cacheWriteTokens}, message:{source:{provider,model}}, stream:[{time,chunk}]}`；行含 `type/seq/time/data` | 折叠 provider/model/四桶/首 token 时延 | 消息自带 `message.source` 为真源（曾误记 opencode-go 教训）。**v3 起 chunk 流并入 `assistant/message.data.stream`**（不再有 `assistant/chunk` 事件）→ TTFT 取 `stream[0].time`；`seq` 在 v3 内为行号。**0.1.7 新增 `assistant/attempt`**：官方只在**没有 usage** 时才写它（`live.usage === undefined ? {} : { usage }` 走 `assistant/message`，否则走 `assistant/attempt`）→ 我们只认 `assistant/message`，**不漏计也不重复计**；若将来 attempt 也带 usage 需补。**0.2 复核**：`SessionEventMap` 仍是 `'assistant/attempt': { turn; step; stream }`（**确认不带 usage** ✅），`'assistant/message': { turn; step; message; stream; usage?; interrupted? }` 未变；同接口的 `TokenUsage = { inputTokens; outputTokens; totalTokens?; cacheReadTokens?; cacheWriteTokens?; reasoningTokens? }`——**`reasoningTokens` 一直在写**（我们目前不入库，可用于区分"可见输出速度"）。**事件面单向向前**：新版新增事件若不标 `ignorable`（如 0.1.2 的 `model/selection`），旧版会整会话拒读（`resume failed … SessionFormatUnsupportedError`），会话数据不可跨版本回退 | 事件 type/字段变化、usage 口径、source 语义、stream 结构、新增事件是否带 `ignorable` |
 | 插件自管配置 | `~/.dsh/storages/token-monitor/config.json`（config 路由） | 轮询/供应商 URL 等配置 | 两版通用 | storages 目录约定 |
 | profile 依赖清单 | `~/.dsh/profiles/web/package.json`（upgrade 路由读取） | 判定安装通道（link/github/npm） | 通用 | 目录/字段 |
 | 凭证托管文件 | `~/.dsh/.credentials.yaml`（fetch-quotas 注释） | key 来源说明（`refs:` / `records:` 结构） | 0.1.2 重写含 records 但 refs 仍被 resolve 使用（实测 key 完整） | 文件结构解析方属官方，只读 |
