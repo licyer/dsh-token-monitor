@@ -5,8 +5,10 @@
 <a href="https://www.npmjs.com/package/dsh-token-monitor" target="_blank" rel="noopener noreferrer"><img alt="npm version" src="https://img.shields.io/npm/v/dsh-token-monitor.svg?color=CB3837"></a>
 [![release](https://img.shields.io/github/v/release/licyer/dsh-token-monitor.svg?color=24292f)](https://github.com/licyer/dsh-token-monitor/releases)
 [![license](https://img.shields.io/npm/l/dsh-token-monitor.svg?color=lightgrey)](LICENSE)
-[![dsh](https://img.shields.io/badge/dsh-0.2.0--rc.1-3964fe)](https://github.com/deepseek-ai/deepseek-harness)
+[![dsh](https://img.shields.io/badge/dsh-0.2.0--rc.2-3964fe)](https://github.com/deepseek-ai/deepseek-harness)
 [![node](https://img.shields.io/badge/node-22.5.0%2B-339933)](https://nodejs.org)
+
+<p><a href="https://github.com/licyer/dsh-token-monitor/releases" target="_blank" rel="noopener noreferrer"><img alt="维护状态：休假停更" src="https://img.shields.io/badge/维护状态-休假停更%207%20天-orange"></a><br><strong>⚠️ 休假停更：2026-09-30 → 2026-10-07（7 天）</strong>——期间不发布新版本，issue / PR 回复可能延迟，回来即恢复。</p>
 
 [安装](#安装) · [功能](#功能) · [插件配置](#插件配置) · [供应商适配](#供应商适配) · [常见问题](#常见问题) · [设计](#设计) · [开发](#开发)
 
@@ -23,7 +25,7 @@ DeepSeek Harness（DSH）Web 界面的大模型**余量与用量监控**插件�
 > [!NOTE]
 > 需要 **Node.js ≥ 22.5.0**（依赖内置 `node:sqlite`）。DSH **桌面版与 Web 端**都可安装（客户端声明为 `platform: web`，两端共用同一份客户端产物）。
 >
-> 适配版本：**DSH 0.2.0-rc.1**（当前实测环境；从 0.1.1 起的旧版本也一直保留接口兼容回退，直接装即可）。详见[DSH 官方接口触点清单](docs/DSH官方接口触点清单.md)。
+> 适配版本：**DSH 0.2.0-rc.2（桌面版）/ 0.2.0-rc.1（web 端 CLI）**——当前实测环境，两端 rc 号可以不同步；从 0.1.1 起的旧版本也一直保留接口兼容回退，直接装即可。详见[DSH 官方接口触点清单](docs/DSH官方接口触点清单.md)。
 >
 > 注意：**会话数据不可跨版本回退**——高版本 DSH 写过的会话，低版本打不开（与插件无关，见常见问题）。
 
