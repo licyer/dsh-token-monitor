@@ -8,7 +8,7 @@
 [![dsh](https://img.shields.io/badge/dsh-0.2.0--rc.2-3964fe)](https://github.com/deepseek-ai/deepseek-harness)
 [![node](https://img.shields.io/badge/node-22.5.0%2B-339933)](https://nodejs.org)
 
-<p><a href="https://github.com/licyer/dsh-token-monitor/releases" target="_blank" rel="noopener noreferrer"><img alt="维护状态：休假停更" src="https://img.shields.io/badge/维护状态-休假停更%207%20天-orange"></a><br><strong>⚠️ 休假停更：2026-09-30 → 2026-10-07（7 天）</strong>——期间不发布新版本，issue / PR 回复可能延迟，回来即恢复。</p>
+<a href="https://github.com/licyer/dsh-token-monitor/releases" target="_blank" rel="noopener noreferrer"><img alt="维护状态：休假停更 7 天（09-30 → 10-07）· 暂停发版 · 回复可能延迟" src="https://img.shields.io/badge/维护状态-休假停更%207%20天（09--30%20→%2010--07）·%20暂停发版%20·%20回复可能延迟-orange"></a>
 
 [安装](#安装) · [功能](#功能) · [插件配置](#插件配置) · [供应商适配](#供应商适配) · [常见问题](#常见问题) · [设计](#设计) · [开发](#开发)
 
