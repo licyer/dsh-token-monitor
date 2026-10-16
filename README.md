@@ -120,6 +120,7 @@ dsh plugin --profile web add github:licyer/dsh-token-monitor
 | `openrouter` | 按量余额 | 积分余额（1 积分 = $1）+ 本月/总消耗 | ✅ 已验证 |
 | `minimax` / `minimax-cn` | 订阅额度 | 5h / 7d 用量百分比（剩余%） | ⚠️ 待真实 key 验证 |
 | `zai` / `zai-coding-cn` | 订阅额度 | 5h / 7d 用量百分比（窗口自动识别，含重置时间） | ⚠️ 待真实 key 验证 |
+| `glm-code-plan` | 订阅额度 | 同 `zai-coding-cn` 端点（5h / 7d 用量百分比）；DSH 原生路由，凭证 `GLM_CODE_PLAN_API_KEY` | ⚠️ 待真实 key 验证 |
 | — | — | 未适配 | — |
 
 > **验证状态说明**：✅ = 长期运行、真实响应结构已验证；⚠️ = 已实现并通过 mock 测试，但**未用真实 key 校准**（响应结构以参考实现为准，若有出入请发抓取返回的 `raw` 原文校准）。
