@@ -115,12 +115,13 @@ dsh plugin --profile web add github:licyer/dsh-token-monitor
 | `kimi-coding` | 订阅额度 | 5h / 7d / 权益等级（百分比与重置倒计时） | ✅ 已验证 |
 | `moonshotai-cn` | 按量余额 | 可用余额（CNY）+ 现金/代金券明细 | ✅ 已验证 |
 | `deepseek` | 按量余额 | 账户余额（按币种账户显示） | ✅ 已验证 |
+| `deepseek-account` | 按量余额 | 桌面端 DeepSeek 账号渠道余额（与 API key 渠道并列；web 端不显示） | ✅ 已验证 |
 | `opencode-go` | 订阅额度 | 5h / 7d / 30d（百分比与重置倒计时） | ✅ 已验证 |
 | `commandcode` | 订阅额度 | 月额度 + 5h / 7d 滚动窗口（已用百分比与重置倒计时；额外结转额度单独行） | ✅ 已验证 |
 | `openrouter` | 按量余额 | 积分余额（1 积分 = $1）+ 本月/总消耗 | ✅ 已验证 |
+| `glm-code-plan` | 订阅额度 | 智谱 Coding 套餐 5h / 7d 用量百分比（bigmodel.cn，含重置时间）；一条覆盖 DSH 原生路由与 pi-ai 渠道 `zai-coding-cn`（凭证 `GLM_CODE_PLAN_API_KEY` 或 `ZAI_CODING_CN_API_KEY`） | ✅ 已验证 |
 | `minimax` / `minimax-cn` | 订阅额度 | 5h / 7d 用量百分比（剩余%） | ⚠️ 待真实 key 验证 |
-| `zai` / `zai-coding-cn` | 订阅额度 | 5h / 7d 用量百分比（窗口自动识别，含重置时间） | ⚠️ 待真实 key 验证 |
-| `glm-code-plan` | 订阅额度 | 同 `zai-coding-cn` 端点（5h / 7d 用量百分比）；DSH 原生路由，凭证 `GLM_CODE_PLAN_API_KEY` | ⚠️ 待真实 key 验证 |
+| `zai` | 订阅额度 | 5h / 7d 用量百分比（国际站 api.z.ai，窗口自动识别，含重置时间） | ⚠️ 待真实 key 验证 |
 | — | — | 未适配 | — |
 
 > **验证状态说明**：✅ = 长期运行、真实响应结构已验证；⚠️ = 已实现并通过 mock 测试，但**未用真实 key 校准**（响应结构以参考实现为准，若有出入请发抓取返回的 `raw` 原文校准）。
