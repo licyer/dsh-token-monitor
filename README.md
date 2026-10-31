@@ -106,6 +106,20 @@ dsh plugin --profile web add github:licyer/dsh-token-monitor
 | `pollMs` | `60` | 头部余量轮询间隔（单位秒，`5`–`86400`）。设置页与 `config.json` 均存秒，需要毫秒时由前端单独 ×1000 |
 | `retentionDays` | `60` | 请求记录保留天数（超过此时长的记录会被定期清理，不影响聚合统计；设置页提供 30/60/90） |
 
+### ChatGPT Codex 登录额度
+
+`chatgpt-codex` 是 ChatGPT Plus/Pro 登录订阅渠道（当前经 codex-as-api），**不是普通 OpenAI API key 或 DSH 原生 OAuth**。服务端默认只读 `~/.codex-as-api/auth.json` 的 `tokens.access_token` / `tokens.account_id`；账号 ID 缺失时从 access token 的账号 claim 提取。不扫描其他账号文件，不刷新或写回凭证；过期/401/403 请在现有 codex-as-api 重新登录。
+
+可通过环境变量 `CODEX_AS_API_AUTH_PATH` 指定认证文件，或在插件 cordis 配置中设置（优先级：显式配置 > 环境变量 > 默认路径；不是上方 UI config.json）：
+
+```yaml
+providers:
+  chatgpt-codex:
+    authPath: C:/Users/you/.codex-as-api/auth.json
+```
+
+只查询固定 `https://chatgpt.com/backend-api/wham/usage`，禁止 `url` / `baseUrl` 覆盖与重定向，复用宿主 Node fetch 网络/环境代理。仅返回白名单额度字段，不返回 raw、凭证或账号 ID。按实际窗口秒数识别 5h / 7d；缺失/非法窗口不补零；已用 0% 有效。详情展示本地分钟级重置时间，徽标与全部提供方始终显示官方已用双窗口百分比；5h >95% 或长周期 ≥90% 告警，窄屏保留首窗口。仅返回 metrics（含 resetAt），不返回旧 UI 余量语义的 stats；即使重置时间已过，也不会自行推算用量归零，等下次官方查询更新。此非公开端点可能随官方变动；Plus 已真实验证，Pro 使用同结构适配但尚未单独实测。
+
 ## 供应商适配
 
 | 提供方 | 类型 | 适配说明 | 验证状态 |
@@ -114,6 +128,7 @@ dsh plugin --profile web add github:licyer/dsh-token-monitor
 | `moonshotai-cn` | 按量余额 | 可用余额（CNY）+ 现金/代金券明细 | ✅ 已验证 |
 | `deepseek` | 按量余额 | 账户余额（按币种账户显示） | ✅ 已验证 |
 | `deepseek-account` | 按量余额 | 桌面端 DeepSeek 账号渠道余额（与 API key 渠道并列；web 端不显示） | ✅ 已验证 |
+| `chatgpt-codex` | 登录订阅额度 | ChatGPT Plus/Pro 5h / 7d 已用百分比与本地重置时间（codex-as-api 只读认证） | ✅ Plus 已验证 |
 | `opencode-go` | 订阅额度 | 5h / 7d / 30d（百分比与重置倒计时） | ✅ 已验证 |
 | `commandcode` | 订阅额度 | 月额度 + 5h / 7d 滚动窗口（已用百分比与重置倒计时；额外结转额度单独行） | ✅ 已验证 |
 | `openrouter` | 按量余额 | 积分余额（1 积分 = $1）+ 本月/总消耗 | ✅ 已验证 |
@@ -204,6 +219,16 @@ dsh plugin --profile web add link:/path/to/dsh-token-monitor   # 本地路径挂
 
 - 改前端（`lib/client.js`）：桌面版 / Web 端**刷新页面**即生效；若同时跑着 `pnpm run dev:web`（重建客户端 bundle），则由 HMR 自动热替换、无需刷新
 - 改服务端（`lib/index.js` / `lib/util/`）：**必须重启**对应进程（`dsh web` / 桌面版应用）
+
+### Codex 适配回归测试
+
+```sh
+node --test --experimental-test-coverage test/*.test.js
+node --check lib/client.js
+node --check lib/index.js
+```
+
+测试直接调用 `FETCHERS['chatgpt-codex']` 与生产 HTTP 工具，仅 mock fetch 边界，使用自动清理的临时认证文件。覆盖双窗口/缺窗/零值/非法值、认证错误/过期、401/403、固定端点/禁止重定向及秘密不泄露。仓库没有单独的构建、TypeScript 或 lint 脚本；语法检查不能替代真实宿主 UI 验收。
 
 ## 许可证
 
