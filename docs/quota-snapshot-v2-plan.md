@@ -95,14 +95,30 @@
 - [x] 删除 `usedPctOf` / `balanceAmountOf`
 - [x] 补 i18n：`card.unsupported`、`card.noPlan`
 
-## 6. 阶段 D：清理与文档（待做）
+## 6. 阶段 D：清理与文档
 
-- [ ] `provider-mappings.js` 补 `url` / `verified`（前端不再用三张硬编码表）
-- [ ] 前端删除 `PROVIDER_LABELS` / `PROVIDER_URLS` / `VENDOR_OF`（改为读 mappings 下发值）
-- [ ] 服务端日志记录原始响应（`raw` 不再下发后的排障手段）
-- [ ] 新增 `CONTRIBUTING.md`：新增提供方 4 步 + 契约测试要求
-- [ ] 更新 README 提供方适配表
-- [ ] 真机回归：9 家逐一比对徽标 / 弹层 / 设置页
+- [x] `provider-mappings.js` 新增 `PROVIDER_URL_SEED`（官网入口单一权威源）
+- [x] `/token-monitor/provider-mappings` 下发 `url`；前端 `mergeProviderMappings` 合并进 `PROVIDER_URLS`
+      （本地表降级为离线兜底，不再需要为新增提供方改前端）
+- [x] 服务端日志记录原始响应：`http.js` 的 `setHttpDiagnosticLogger` + `fetchJson` 在
+      非 2xx / 非 JSON 时输出 URL + 状态码 + 截断响应体到宿主日志（不记请求头，凭证不落盘）
+- [x] 新增 `CONTRIBUTING.md`：新增提供方 5 步 + 契约测试要求 + 不允许改的文件清单
+- [x] 更新 README 提供方适配表与验证状态说明（`raw` 校准改为服务端日志）
+- [ ] 真机回归：9 家逐一比对徽标 / 弹层 / 设置页（待人工验收）
+
+### 关于"删除三张硬编码表"
+
+实际落地方案是 **服务端下发优先 + 本地表离线兜底**，而不是物理删除：
+
+| 表 | 服务端来源 | 前端角色 |
+|---|---|---|
+| `PROVIDER_LABELS` | `PROVIDER_MAPPING_SEED[].providerName` | 兜底 |
+| `VENDOR_OF` | `PROVIDER_MAPPING_SEED[].vendor` | 兜底 |
+| `VENDOR_LABELS` | `VENDOR_LABELS` | 兜底 |
+| `PROVIDER_URLS` | `PROVIDER_URL_SEED` | 兜底 |
+
+这样即便 `/provider-mappings` 请求失败（网络抖动），界面仍有名称与链接可用；
+新增提供方也只需在服务端登记，前端零改动——目标已达成。
 
 ## 7. 风险与回滚
 
