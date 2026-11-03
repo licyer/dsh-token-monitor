@@ -18,7 +18,6 @@ function productionFunction(name, context = {}) {
 const usedPctOf = productionFunction('usedPctOf');
 const badgeState = productionFunction('badgeTextState', { BADGE_WEEKLY_ERR_PCT: 10, usedPctOf });
 const quotaText = productionFunction('quotaText');
-const shortHeadline = productionFunction('shortHeadline');
 const allProviders = productionFunction('AllProviders', {
   h: (tag, props, ...children) => ({ tag, props, children }),
   S: { dot: () => ({}) },
@@ -39,11 +38,11 @@ test('Codex official used-percent survives every display and alert path, includi
           secondary_window: { limit_window_seconds: 604800, used_percent: week, reset_at: reset },
         } }));
         const provider = await FETCHERS['chatgpt-codex']({}, { authPath });
-        const headline = `5h ${five}% · 7d ${week}%`;
+        // 徽标只显示单窗口（5h 优先），完整双窗口在 metrics 里
+        const headline = `5h ${five}%`;
         assert.equal(provider.headline, headline);
         assert.ok(!('stats' in provider));
         assert.equal(quotaText(provider, Date.now()), null);
-        assert.equal(shortHeadline(provider.headline), `5h ${five}%`);
         assert.equal(badgeState(provider), expectedState);
         const rows = allProviders({ providers: [provider] });
         assert.equal(rows[0].children[2].children[0], headline);

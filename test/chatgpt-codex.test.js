@@ -41,7 +41,7 @@ test('registered production Codex fetcher', async (t) => {
       await auth();
       const result = await run();
       assert.equal(result.ok, true);
-      assert.equal(result.headline, '5h 39% · 7d 95%');
+      assert.equal(result.headline, '5h 39%');
       assert.equal(result.metrics[1].pct, 95);
       assert.equal(result.metrics[0].resetAt, 1793426261000);
       assert.ok(!('stats' in result));
@@ -90,7 +90,7 @@ test('registered production Codex fetcher', async (t) => {
     await t.test('actual seconds determine labels even when windows swapped; zeros retained', async () => {
       body = { rate_limit: { primary_window: window(604800, 0), secondary_window: window(18000, 0, 0) } };
       const result = await run();
-      assert.equal(result.headline, '5h 0% · 7d 0%');
+      assert.equal(result.headline, '5h 0%');
       assert.equal(result.metrics[0].resetAt, undefined);
       assert.equal(result.metrics[0].detail, '重置时间未提供');
     });
