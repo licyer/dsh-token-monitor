@@ -2,11 +2,11 @@
 
 ## 新增一家提供方
 
-只需要改**服务端**的 4 个地方，前端一行都不用动（余量快照 v2 契约已把渲染逻辑与提供方解耦）。
+只需要改**服务端**的 4 个地方，前端一行都不用动（余量快照契约已把渲染逻辑与提供方解耦）。
 
 ### 1. 写抓取器：`lib/util/fetch-quotas.js`
 
-新增一个 `fetchXxx(ctx, config)`，直接返回 **v2 快照**：
+新增一个 `fetchXxx(ctx, config)`，直接返回**余量快照**：
 
 ```js
 async function fetchExample(ctx, config) {
@@ -42,7 +42,7 @@ async function fetchExample(ctx, config) {
 }
 ```
 
-**快照结构**（完整定义见 [`docs/quota-snapshot-v2.md`](docs/quota-snapshot-v2.md)）：
+**快照结构**（完整定义见 [`docs/余量快照契约.md`](docs/余量快照契约.md)）：
 
 | 字段 | 说明 |
 |---|---|
@@ -106,7 +106,7 @@ assert.equal(result.status, STATUS.OK);
 
 | 文件 | 原因 |
 |---|---|
-| `lib/client.js` | 前端只认 v2 契约，与具体提供方无关 |
+| `lib/client.js` | 前端只认快照契约，与具体提供方无关 |
 | `lib/index.js` | 聚合/路由编排层，与提供方无关 |
 
 如果发现"必须改前端才能支持"，说明契约缺字段——请在 PR 里说明，先讨论再动。

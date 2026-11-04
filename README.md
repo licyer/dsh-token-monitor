@@ -139,9 +139,9 @@ providers:
 
 > **验证状态说明**：✅ = 长期运行、真实响应结构已验证；⚠️ = 已实现并通过 mock 测试，但**未用真实 key 校准**（响应结构以参考实现为准；如需校准请提供宿主日志里的 HTTP 响应摘要——原始响应不再随接口下发）。
 
-> **数据契约**：所有提供方统一产出「余量快照 v2」（`status` + `billingType` + `timeWindows`/`balance`），
+> **数据契约**：所有提供方统一产出「余量快照」（`status` + `billingType` + `timeWindows`/`balance`），
 > 前端只有一套渲染逻辑。新增提供方只需在服务端加抓取器与映射，详见 [CONTRIBUTING.md](CONTRIBUTING.md)
-> 与 [docs/quota-snapshot-v2.md](docs/quota-snapshot-v2.md)。
+> 与 [docs/余量快照契约.md](docs/余量快照契约.md)。
 
 ## 常见问题
 

@@ -8,8 +8,8 @@ import { STATUS, validate } from '../lib/util/quota-snapshot.js';
 
 const winOf = (result, period) => (result.quota && result.quota.timeWindows || []).find((w) => w.period === period);
 
-// 说明：v2 改造后本文件只校验「抓取结果的结构与事实」；
-// 徽标判色/文案的断言待前端切到 v2（阶段 C）后恢复。
+// 说明：本文件只校验「抓取结果的结构与事实」；
+// 徽标判色/文案由前端逻辑测试覆盖（见 temp/verify-frontend.mjs 等脚本）。
 test('Codex official used-percent survives fetch and contract, including past reset', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'token-monitor-badge-'));
   const authPath = join(directory, 'auth.json');

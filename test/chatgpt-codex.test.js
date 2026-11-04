@@ -13,7 +13,7 @@ const window = (seconds, pct = 0, reset = 1793426261) => ({ limit_window_seconds
 const usage = () => ({ plan_type: 'plus', rate_limit: { primary_window: window(18000, 39), secondary_window: window(604800, 95) }, private: SECRET });
 const jwt = (claims) => `fixture.${Buffer.from(JSON.stringify(claims)).toString('base64url')}.signature`;
 
-/** v2 窗口取用：按 period 找窗口（替代旧 metrics 下标）。 */
+/** 窗口取用：按 period 找窗口（替代旧 metrics 下标）。 */
 const winOf = (result, period) => (result.quota && result.quota.timeWindows || []).find((w) => w.period === period);
 
 // All tests call the registered production fetcher and real fetchJson; only IO boundary fetch is mocked.
