@@ -12,8 +12,8 @@ const quotaSnapshot = () => ({
   quota: {
     plan: 'Pro',
     timeWindows: [
-      { period: '5h', usedPct: 12, used: 1200, limit: 10000, resetAt: 1767000000000 },
-      { period: '7d', usedPct: 31, resetInSec: 14400 },
+      { period: '5h', usedPct: 12, resetAt: 1767000000000 },
+      { period: '7d', usedPct: 31 },
     ],
     extraQuotas: [{ label: '额外额度（结转）', amount: 12.34, currency: 'CNY' }],
   },

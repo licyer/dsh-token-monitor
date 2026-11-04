@@ -50,9 +50,9 @@ async function fetchExample(ctx, config) {
 | `billingType` | `quota`（订阅额度）/ `balance`（按量余额） |
 | `status` | `STATUS.OK`=1、`NO_CREDENTIAL`=2、`UNSUPPORTED`=3、`UNAUTHORIZED`=4、`REQUEST_FAILED`=5、`NO_DATA`=6、`NO_PLAN`=7 |
 | `message` | 可选，仅限白名单文案（`API 密钥无效`、`凭证被拒绝（HTTP 401）`、`请求超时（10000ms）`、`HTTP 502`、`未识别到额度字段`、`官方暂未提供查询接口`） |
-| `quota.timeWindows[]` | `{ period: '5h'│'7d'│'30d'│'month', usedPct: 0-100, used?, limit?, resetAt?, resetInSec? }` |
+| `quota.timeWindows[]` | `{ period: '5h'│'7d'│'30d'│'month', usedPct: 0-100, resetAt?, scope? }`；`scope` 为 `'code'` 表示编程专项额度（只进明细，不参与徽标选窗） |
 | `quota.plan` | 可选，套餐/等级名 |
-| `quota.extraQuotas[]` | 可选，`{ label, amount, currency, detail? }`（结转额度、加油包等） |
+| `quota.extraQuotas[]` | 可选，`{ label, amount, currency, detail?, progress? }`；`progress = { used, limit, currency? }`，`limit: null` 表示无上限 |
 | `balance` | `{ amount, currency, accounts?, alertThreshold?, spending? }` |
 
 **硬规则**：

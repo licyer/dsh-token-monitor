@@ -31,14 +31,15 @@
     {
       "period": "5h",               // 必填：5h | 7d | 30d | month（受控枚举）
       "usedPct": 12,                // 必填：已用百分比 0–100
-      "used": 1234,                 // 可选：数值用量
-      "limit": 10000,               // 可选：窗口上限（token / 次数 / 额度单位）
       "resetAt": 1767000000000,     // 可选：重置时刻，毫秒时间戳
-      "resetInSec": 14400           // 可选：剩余秒数（平台只给相对时间时用）
+      "scope": "code"               // 可选：total（默认）| code（编程专项，只进明细）
     }
   ],
   "extraQuotas": [                  // 可选：结转额度、加油包等附加额度
-    { "label": "额外额度（结转）", "amount": 12.34, "currency": "CNY" }
+    { "label": "额外额度（结转）", "amount": 12.34, "currency": "CNY" },
+    // 带消费进度时（如 Kimi 加油包）：progress.limit 为 null 表示「无上限」
+    { "label": "加油包", "amount": 0, "currency": "CNY",
+      "progress": { "used": 12, "limit": 300, "currency": "CNY" } }
   ]
 }
 ```
@@ -49,6 +50,8 @@
 - 窗口的展示文案由前端按 `period` 映射，协议不传 `label`。
 - 长周期由前端集合 `['7d', '30d', 'month']` 推导，协议不传标记字段。
 - `usedPct` 是**已用**百分比（与官方额度页口径一致），不是剩余。
+- 绝对用量（`used` / `limit`）与相对时间（`resetInSec`）**不在协议里**：9 家实测都只给百分比与重置时刻，
+  需要时再按受控字段扩展（无提供方产出、前端不读的字段已移除，避免误导）。
 
 ### 2.3 `billingType = "balance"`
 
@@ -127,9 +130,9 @@
 
 | 提供方 | billingType | 快照内容 |
 |---|---|---|
-| kimi-coding | quota | `plan` = 权益等级；`timeWindows` = 5h/7d/month；无套餐 → status 7 |
+| kimi-coding | quota | `plan` = 权益等级；`timeWindows` = 5h/month（新体系另有 `scope=code` 的编程用量）；`extraQuotas` = 加油包（带 `progress`）；无套餐 → status 7 |
 | opencode-go | quota | `plan` = 套餐名；`timeWindows` = 5h/7d/30d |
-| commandcode | quota | `timeWindows` = 5h/7d/month；`extraQuotas` = 结转/加油包 |
+| commandcode | quota | `timeWindows` = 5h/7d/month；`extraQuotas` = 结转额度 |
 | glm-code-plan | quota | `timeWindows` = 5h/7d |
 | minimax-cn | quota | `timeWindows` = 5h/7d |
 | chatgpt-codex | quota | `plan` = plan_type；`timeWindows` = 5h/7d |
