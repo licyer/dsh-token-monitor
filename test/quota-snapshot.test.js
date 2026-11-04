@@ -98,6 +98,37 @@ test('可选数值字段类型错误被拒', () => {
   assert.equal(validate(snap).ok, false);
 });
 
+test('timeWindows[].scope 只接受受控枚举', () => {
+  const snap = quotaSnapshot();
+  snap.quota.timeWindows.push({ period: 'month', usedPct: 0, scope: 'code' });
+  assert.equal(validate(snap).ok, true, 'code 合法');
+  snap.quota.timeWindows[1].scope = 'total';
+  assert.equal(validate(snap).ok, true, 'total 合法');
+  snap.quota.timeWindows[1].scope = 'programming';
+  const r = validate(snap);
+  assert.equal(r.ok, false, '未知名被拒');
+  assert.ok(r.errors.some((e) => e.includes('scope')), r.errors.join('; '));
+});
+
+test('extraQuotas[].progress 可选，存在时校验 used/limit', () => {
+  const snap = quotaSnapshot();
+  // 合法
+  snap.quota.extraQuotas = [{ label: '加油包', amount: 0, currency: 'CNY', progress: { used: 12, limit: 30, currency: 'CNY' } }];
+  assert.equal(validate(snap).ok, true);
+  // limit=null 表示"无上限"，合法
+  snap.quota.extraQuotas[0].progress = { used: 5, limit: null, currency: 'CNY' };
+  assert.equal(validate(snap).ok, true, 'limit=null 应允许（无上限）');
+  // limit 必须为正或 null
+  snap.quota.extraQuotas[0].progress.limit = 0;
+  assert.equal(validate(snap).ok, false);
+  // used 必须是数字
+  snap.quota.extraQuotas[0].progress = { used: '12', limit: 30 };
+  assert.equal(validate(snap).ok, false);
+  // progress 必须是对象
+  snap.quota.extraQuotas[0].progress = 30;
+  assert.equal(validate(snap).ok, false);
+});
+
 test('status=OK 但缺数据被拒', () => {
   assert.equal(validate({ providerId: 'x', billingType: 'quota', status: STATUS.OK }).ok, false);
   assert.equal(validate({ providerId: 'x', billingType: 'balance', status: STATUS.OK }).ok, false);
