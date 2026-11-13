@@ -8,8 +8,6 @@
 [![dsh](https://img.shields.io/badge/dsh-0.2.1--rc.2-3964fe)](https://github.com/deepseek-ai/deepseek-harness)
 [![node](https://img.shields.io/badge/node-22.5.0%2B-339933)](https://nodejs.org)
 
-<a href="#安装" target="_blank" rel="noopener noreferrer"><img alt="维护状态：npm 发布暂停 —— NPM_TOKEN 已过期，npm 账号无法登录，双重认证恢复码遗失、正在向官方申请重置；npm 上停留在 v1.0.12，最新版请改用 GitHub 安装" src="https://img.shields.io/badge/维护状态-npm%20发布暂停%20·%20NPM__TOKEN%20过期%20·%20账号无法登录%20·%20双重认证申请重置中%20·%20npm%20停留%20v1.0.12%20·%20最新版请用%20GitHub%20安装-orange"></a>
-
 [安装](#安装) · [功能](#功能) · [插件配置](#插件配置) · [供应商适配](#供应商适配) · [常见问题](#常见问题) · [设计](#设计) · [开发](#开发)
 
 </div>
@@ -19,25 +17,6 @@ DeepSeek Harness（DSH）Web 界面的大模型**余量与用量监控**插件�
 <p align="center">
   <img src="docs/images/usage-overview.png" alt="用量页签总览" width="100%">
 </p>
-
-> [!WARNING]
-> **npm 渠道暂时无法发布新版本**
->
-> 维护者的 npm 账户目前处于无法登录的状态：
->
-> - 发布用的 `NPM_TOKEN` 已过期；
-> - 账户密码无法登录；
-> - 双重认证（2FA）的恢复码也已遗失。
->
-> 已向 npm 官方提交账户恢复申请，正在等待处理。在此期间：
->
-> - **npm 上仍停留在 v1.0.12**，`dsh plugin --profile web add dsh-token-monitor` 拿到的是旧版；
-> - **GitHub 上已有 v1.1.0**，需要最新版请改用下方[从 GitHub 安装](#从-github)：
->   ```sh
->   dsh plugin --profile web add github:licyer/dsh-token-monitor
->   ```
->
-> 恢复发布后会移除本通知。
 
 ## 安装
 
