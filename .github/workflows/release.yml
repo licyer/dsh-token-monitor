@@ -5,7 +5,9 @@
 #   npm 发布不可撤回，仍只能走 publish.yml 手动触发（输入 OK），两者独立。
 # - 正文**固定一句默认**（"发布 vX.Y.Z。"）当占位：发完在网页上人工替换即可。
 #   刻意不读任何日志文件、也不用 --generate-notes（那会生成一堆 What's Changed 噪音）。
-# - 幂等：Release 已存在时改为更新（gh release edit），重跑安全。
+# - **幂等且不破坏人工内容**：Release 已存在时只维护 latest 标记，不改标题与正文。
+#   早期写法在"重新推送同名 tag"（修正 tag 指向）时会把已写好的正文覆盖成占位句，
+#   2026-11-13 真实发生过一次，故改为绝不覆盖。
 # - 手动触发（填 tag 名）用于给历史 tag 补建 Release。
 # - 一致性守卫：tag 必须与 package.json 的 version 一致，不一致直接失败。
 
@@ -43,13 +45,16 @@ jobs:
           fi
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
 
-      - name: 创建或更新 Release（标题=tag，正文为一句默认，待人工替换）
+      - name: 创建或更新 Release（已存在时只维护 latest，绝不覆盖人工写好的正文）
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${{ steps.meta.outputs.tag }}"
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release edit "$TAG" --title "$TAG" --notes "发布 $TAG。"
+            # 已存在：正文/标题可能已被人工写好（甚至已发布过），这里只确保 latest 标记。
+            # 曾经的写法会无条件 `--notes "发布 $TAG。" --title "$TAG"`，只要重新推送
+            # 同名 tag（例如修正 tag 指向）就会把正文冲掉——2026-11-13 真实发生过一次。
+            gh release edit "$TAG" --latest
           else
             gh release create "$TAG" --title "$TAG" --notes "发布 $TAG。" --latest
           fi
