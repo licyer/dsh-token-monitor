@@ -191,3 +191,35 @@ test('assertValid 失败时抛出带原因的错误', () => {
     /不符合契约/,
   );
 });
+
+test('links 可选：合法 http(s) 地址通过，非法协议/类型被拒', () => {
+  const ok = balanceSnapshot();
+  ok.links = {
+    topUpUrl: 'https://platform.deepseek.com/top_up',
+    usageUrl: 'https://platform.deepseek.com/usage',
+  };
+  assert.equal(validate(ok).ok, true);
+
+  // 只给一个链接也合法
+  const partial = balanceSnapshot();
+  partial.links = { topUpUrl: 'https://platform.deepseek.com/top_up' };
+  assert.equal(validate(partial).ok, true);
+
+  // links 为 null 视同未提供
+  const nullLinks = balanceSnapshot();
+  nullLinks.links = null;
+  assert.equal(validate(nullLinks).ok, true);
+
+  // 非 http(s) 协议被拒（防止 javascript: 之类的注入）
+  const badProtocol = balanceSnapshot();
+  badProtocol.links = { topUpUrl: 'javascript:alert(1)' };
+  const r1 = validate(badProtocol);
+  assert.equal(r1.ok, false);
+  assert.ok(r1.errors.some((e) => e.includes('links.topUpUrl')), r1.errors.join('；'));
+
+  // links 必须是对象
+  const badType = balanceSnapshot();
+  badType.links = 'https://example.com';
+  assert.equal(validate(badType).ok, false);
+});
+
