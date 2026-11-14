@@ -52,7 +52,7 @@ test('内层按钮：字号与行高沿用系统 sm 规格', () => {
   assert.equal(decl(trigger, 'fontSize'), '11px');
   assert.equal(decl(trigger, 'lineHeight'), '16px');
   assert.equal(decl(trigger, 'gap'), '4px');
-  assert.equal(decl(trigger, 'padding'), '3px 5px');
+  assert.equal(decl(trigger, 'padding'), '3.5px 6px');
 });
 
 test('hover：只换背景色，尺寸不变', () => {
