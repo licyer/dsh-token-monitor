@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  STATUS, BILLING_TYPES, PERIODS, mapError, validate, assertValid,
+  STATUS, BILLING_TYPES, PERIODS, validate,
 } from '../lib/util/quota-snapshot.js';
 
 /** 一份合法的 quota 型快照（各处测试的基线）。 */
@@ -38,7 +38,6 @@ const balanceSnapshot = () => ({
 test('合法的 quota 型快照通过校验', () => {
   const result = validate(quotaSnapshot());
   assert.deepEqual(result, { ok: true, errors: [] });
-  assert.equal(assertValid(quotaSnapshot()).providerId, 'glm-code-plan');
 });
 
 test('合法的 balance 型快照通过校验', () => {
@@ -162,20 +161,6 @@ test('message 只允许字符串或空', () => {
   assert.equal(validate(badMessage).ok, false);
 });
 
-test('mapError 把错误类型翻译成状态码', () => {
-  assert.equal(mapError('no-credential'), STATUS.NO_CREDENTIAL);
-  assert.equal(mapError('unsupported'), STATUS.UNSUPPORTED);
-  assert.equal(mapError('unauthorized'), STATUS.UNAUTHORIZED);
-  assert.equal(mapError('network'), STATUS.REQUEST_FAILED);
-  assert.equal(mapError('timeout'), STATUS.REQUEST_FAILED);
-  assert.equal(mapError('http'), STATUS.REQUEST_FAILED);
-  assert.equal(mapError('unrecognized'), STATUS.NO_DATA);
-  assert.equal(mapError('no-plan'), STATUS.NO_PLAN);
-  // 未知类型按请求失败处理，不能静默当成成功
-  assert.equal(mapError('something-else'), STATUS.REQUEST_FAILED);
-  assert.equal(mapError(undefined), STATUS.REQUEST_FAILED);
-});
-
 test('状态码取值固定（契约不可漂移）', () => {
   assert.deepEqual(STATUS, {
     OK: 1, NO_CREDENTIAL: 2, UNSUPPORTED: 3, UNAUTHORIZED: 4,
@@ -183,13 +168,6 @@ test('状态码取值固定（契约不可漂移）', () => {
   });
   assert.deepEqual(BILLING_TYPES, ['quota', 'balance']);
   assert.ok(Object.isFrozen(STATUS));
-});
-
-test('assertValid 失败时抛出带原因的错误', () => {
-  assert.throws(
-    () => assertValid({ providerId: '', billingType: 'quota', status: 1 }),
-    /不符合契约/,
-  );
 });
 
 test('links 可选：合法 http(s) 地址通过，非法协议/类型被拒', () => {

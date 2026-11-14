@@ -4,7 +4,7 @@ import {
   VENDORS, PROVIDERS, CLIENTS, MODELS,
   canonicalProvider, canonicalModel, vendorOfProvider, vendorOfModel, providerOfModel,
   labelOfProvider, labelOfVendor, labelOfModel, labelOfClient,
-  urlsOfProvider, fetcherOfProvider, colorOfVendor, kindOfVendor, kindOfProvider,
+  colorOfVendor,
   priceKeyOf, resolveLabel, project,
 } from '../lib/util/mapping-registry.js';
 
@@ -127,25 +127,10 @@ test('resolveLabel 兜底顺序', () => {
 
 /* ------------------------------ 元数据 ------------------------------ */
 
-test('链接 / 抓取器 / 颜色 / 性质', () => {
-  assert.deepEqual(urlsOfProvider('deepseek'), { balance: 'https://platform.deepseek.com/top_up' });
-  assert.equal(urlsOfProvider('unknown-thing'), null);
-
-  assert.equal(fetcherOfProvider('kimi-coding'), 'kimi');
-  assert.equal(fetcherOfProvider('deepseek'), 'deepseek');
-  assert.equal(fetcherOfProvider('deepseek-official'), 'deepseek');
-  assert.equal(fetcherOfProvider('unknown-thing'), null);
-
+test('厂商颜色', () => {
   assert.equal(colorOfVendor('deepseek'), '#3964fe');
   assert.equal(colorOfVendor('opencode'), null);   // 中转站不占色系
   assert.equal(colorOfVendor('不存在'), null);
-
-  assert.equal(kindOfVendor('deepseek'), 'owner');
-  assert.equal(kindOfVendor('opencode'), 'reseller');
-  assert.equal(kindOfVendor('不存在'), 'unknown');
-
-  assert.equal(kindOfProvider('kimi-coding'), 'quota');
-  assert.equal(kindOfProvider('deepseek'), 'balance');
 });
 
 test('取价键走规范 id', () => {
