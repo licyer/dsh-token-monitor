@@ -1,0 +1,6 @@
+{
+  "meta": {
+    "title": "Token Monitor",
+    "description": "Model quota monitor for the DSH session header: quota badge, an all-provider detail popover, and a usage statistics tab"
+  }
+}
