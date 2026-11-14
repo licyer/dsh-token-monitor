@@ -37,8 +37,15 @@ jobs:
         id: meta
         run: |
           TAG="${{ inputs.tag || github.ref_name }}"
-          git fetch --depth=1 origin "refs/tags/$TAG:refs/tags/$TAG"
-          PKG_VERSION=$(git show "$TAG:package.json" | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version")
+          # 补齐 tag ref；**失败不算错**（手动触发时工作区是所选分支，tag 未必在本地，
+          # 而且浅克隆里 refspec 收窄/已存在都可能让 fetch 返回非 0——旧写法因此整步失败）
+          git fetch --depth=1 origin "refs/tags/$TAG:refs/tags/$TAG" || true
+          if git rev-parse --verify --quiet "refs/tags/$TAG" >/dev/null; then
+            PKG_VERSION=$(git show "refs/tags/$TAG:package.json" | node -p "JSON.parse(require('fs').readFileSync(0,'utf8')).version")
+          else
+            # 兜底：工作区就是该 tag 的检出（push 触发时）
+            PKG_VERSION=$(node -p "JSON.parse(require('fs').readFileSync('package.json','utf8')).version")
+          fi
           if [ "$TAG" != "v$PKG_VERSION" ]; then
             echo "::error::tag $TAG 与 package.json 版本 v$PKG_VERSION 不一致"
             exit 1
