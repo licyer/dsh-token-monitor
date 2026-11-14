@@ -78,7 +78,9 @@ test('provider → vendor', () => {
   assert.equal(vendorOfProvider('moonshotai-cn'), 'kimi');
   assert.equal(vendorOfProvider('zai-coding-cn'), 'zhipu');
   assert.equal(vendorOfProvider('chatgpt-codex'), 'openai');
-  assert.equal(vendorOfProvider('不存在的'), 'unknown');
+  // 未登记的提供方：把自身当厂商（红线：不并入 unknown、不改名）
+  assert.equal(vendorOfProvider('不存在的'), '不存在的');
+  assert.equal(vendorOfProvider(''), 'unknown');
 });
 
 test('model → vendor（表内优先，其次前缀推断）', () => {
