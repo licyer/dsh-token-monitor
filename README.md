@@ -12,7 +12,7 @@
 
 </div>
 
-DeepSeek Harness（DSH）Web 界面的大模型**余量与用量监控**插件：会话头部实时余量徽标 + 主区"用量"页签，本地 SQLite 记录每次调用的 token 与费用。
+DeepSeek Harness（DSH）的大模型**余量与用量监控**插件：会话头部实时余量徽标 + 主区"用量"页签，本地 SQLite 记录每次调用的 token 与费用。桌面版与 Web 端通用。
 
 <p align="center">
   <img src="docs/images/01-usage-overview.png" alt="用量页签总览" width="100%">
