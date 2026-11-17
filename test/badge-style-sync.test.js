@@ -8,7 +8,7 @@
  *   2. 展开（右侧栏）：`sidebar-right` 的 `.iconButton` → 28×28、radius 8px、同一 hover 背景
  * 两者的 hover **只换背景色，尺寸不变**。
  *
- * 我们的徽标保留 0.5px 描边（系统那两个没有），其余（高度/圆角/hover 背景）与之一致；
+ * 我们的徽标保留 1px 描边（系统那两个没有），其余（高度/圆角/hover 背景）与之一致；
  * 悬浮提示气泡照系统 Tooltip 的 `_bubble`（padding 3px 7px / radius 8px / 13px 20px /
  * tooltip 专用前景背景色 / 下方居中 / 150ms 淡入）。
  *
@@ -39,10 +39,10 @@ function decl(block, key) {
 
 test('徽标容器：高度 / 圆角 / 描边与系统头部按钮对齐', () => {
   const pill = styleBlock('pill');
-  // 系统两个按钮都是 28px 高、radius-sm(8px)；我们保留 0.5px 描边
+  // 系统两个按钮都是 28px 高、radius-sm(8px)；我们保留 0.5px 描边（新版本状态下临时变 1px 主色）
   assert.equal(decl(pill, 'height'), '28px', '徽标高度应与系统头部按钮一致（28px）');
   assert.equal(decl(pill, 'borderRadius'), 'var(--dsw-radius-sm)', '圆角应与系统一致（radius-sm=8px）');
-  assert.equal(decl(pill, 'border'), '0.5px solid var(--dsw-alias-border-l4)', '描边保留，颜色沿用 border-l4');
+  assert.equal(decl(pill, 'border'), '0.5px solid var(--dsw-alias-border-l4)', '常态描边保持 0.5px，颜色沿用 border-l4');
   assert.equal(decl(pill, 'alignItems'), 'stretch');
   assert.equal(decl(pill, 'boxSizing'), 'border-box');
 });
@@ -52,7 +52,17 @@ test('内层按钮：字号与行高沿用系统 sm 规格', () => {
   assert.equal(decl(trigger, 'fontSize'), '11px');
   assert.equal(decl(trigger, 'lineHeight'), '16px');
   assert.equal(decl(trigger, 'gap'), '4px');
+  // 常态左右 6px + 0.5px 描边 = 6.5px，与系统图标留白（28px 内居中 15px 图标）一致
   assert.equal(decl(trigger, 'padding'), '3.5px 6px');
+});
+
+test('新版本状态：描边加粗为主色，内层 padding 同步收紧保持 6.5px', () => {
+  // 只有"有新版本"时才换成 1px 主色描边；同时左右 padding 由 6px 收到 5.5px
+  // （5.5 + 1 = 6.5），文字到外沿的距离在两种状态下都不变。
+  assert.ok(/showUpdateEntry\s*\?\s*Object\.assign\(\{\},\s*S\.pill,\s*\{\s*border:\s*"1px solid color-mix\(in srgb, var\(--dsw-alias-state-business-primary\) 40%, transparent\)"/.test(source),
+    '新版本状态应把 pill 描边换成 1px 主色 40%');
+  assert.ok(/if \(showUpdateEntry\) \{\s*triggerStyle\.padding = "3\.5px 5\.5px";/.test(source),
+    '新版本状态应把内层 padding 收到 3.5px 5.5px');
 });
 
 test('hover：只换背景色，尺寸不变', () => {
