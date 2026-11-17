@@ -4,7 +4,7 @@ import {
   VENDORS, PROVIDERS, CLIENTS, MODELS,
   canonicalProvider, canonicalModel, vendorOfProvider, vendorOfModel, providerOfModel,
   labelOfProvider, labelOfVendor, labelOfModel, labelOfClient,
-  colorOfVendor,
+  colorOfVendor, vendorSortRank,
   priceKeyOf, resolveLabel, project,
 } from '../lib/util/mapping-registry.js';
 
@@ -215,4 +215,21 @@ test('客户端展示名形态正常', () => {
   for (const [id, label] of Object.entries(CLIENTS)) {
     assert.ok(typeof label === 'string' || (label && typeof label === 'object'), `${id} 展示名类型异常`);
   }
+});
+
+/* --------------------------- 供应商排序优先级 --------------------------- */
+
+test('供应商排序：DeepSeek 第一、未知最后、其余居中', () => {
+  assert.equal(vendorSortRank('deepseek'), 0);
+  assert.equal(vendorSortRank('unknown'), 2);
+  for (const id of ['kimi', 'zhipu', 'opencode', 'commandcode']) {
+    assert.equal(vendorSortRank(id), 1, `${id} 应排在中间层`);
+  }
+  // 排序后的实际位置：deepseek 在最前，unknown 在最后
+  const list = ['unknown', 'zhipu', 'deepseek', 'kimi'].sort((a, b) => {
+    const d = vendorSortRank(a) - vendorSortRank(b);
+    return d !== 0 ? d : a.localeCompare(b);
+  });
+  assert.equal(list[0], 'deepseek');
+  assert.equal(list[list.length - 1], 'unknown');
 });
