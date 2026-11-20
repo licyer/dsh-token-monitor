@@ -135,10 +135,18 @@ test('所有悬浮提示统一：无自建浮层、无原生 title 属性', () =
     /var cellProps = c\.title \? \{ "data-tip": c\.title\(row\) \}/.test(source),
     '表格长内容列应使用 data-tip',
   );
-  // 原先用原生 title 的位置逐个抽查
-  for (const key of ['entry.openSite', 'entry.openUsage', 'focus.clear', 'settings.pricing.title', 'src.dshDesc']) {
+  // 原先用原生 title 的位置逐个抽查（settings.pricing.title 已豁免：面板头悬停会弹
+  // "模型定价"气泡遮挡下方内容，故去掉 data-tip；见 lib/client.js ModelPricingPanel 注释）
+  for (const key of ['entry.openSite', 'entry.openUsage', 'focus.clear', 'src.dshDesc']) {
     assert.ok(source.includes(`"data-tip": t("${key}")`), `${key} 未改走 data-tip`);
   }
+  // 模型定价面板头不应再有 data-tip（悬停气泡遮挡折叠区下方内容）
+  const pricingHeader = source.slice(
+    source.indexOf('function ModelPricingPanel'),
+    source.indexOf('function ModelPricingPanel') + 3000,
+  );
+  assert.ok(!/"data-tip":\s*t\("settings\.pricing\.title"\)/.test(pricingHeader),
+    '模型定价面板头不应再带 data-tip');
   // h(...) 的 props 里不应再出现原生 title（列定义里的 c.title 是数据字段，不在此列）
   const domTitle = source.match(/h\("[a-z]+", \{[^{}]*?\btitle:\s/g);
   assert.equal(domTitle, null, `仍有原生 title 属性：${domTitle}`);
